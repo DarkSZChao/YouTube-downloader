@@ -46,6 +46,8 @@ ui.add_head_html("""
 
 # Function to delete files older than a certain time
 def delete_old_files():
+    input_url.clear()
+
     current_time = time.time()
     for file in glob.glob(os.path.join(DEFAULT_SAVING_DIR, "*.mp3")):
         if os.path.getmtime(file) < current_time - 60 * 10:  # 1 hour ago
@@ -109,14 +111,21 @@ async def async_callback_button_download():
     try:
         await run.cpu_bound(download_youtube_as_mp3, youtube_url, DEFAULT_SAVING_DIR)
         await asyncio.sleep(3)
-        mp3_list = glob.glob(os.path.join(DEFAULT_SAVING_DIR, "*.mp3"))
-        latest_mp3 = max(mp3_list, key=os.path.getctime)
-        ui.download(latest_mp3)
         label_info.style('color: green; margin-top: 10px').set_text(f'Finish, MP3 is ready.')
         ui.notify(f'Finish, MP3 is ready.')
+
+        try:
+            mp3_list = glob.glob(os.path.join(DEFAULT_SAVING_DIR, "*.mp3"))
+            latest_mp3 = max(mp3_list, key=os.path.getctime)
+            ui.download(latest_mp3)
+        except:
+            label_info.style('color: red; margin-top: 10px').set_text('Unable to locate the file...')
+            ui.notify('Unable to locate the file...')
+
     except:
         label_info.style('color: red; margin-top: 10px').set_text('Download fail, pls check URL...')
         ui.notify('Download fail, pls check URL...')
+
 
     # enable the items
     enable_GUI_items()
