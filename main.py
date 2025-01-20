@@ -82,6 +82,8 @@ async def async_callback_button_download():
     if not youtube_url:
         label_info.style('color: red; margin-top: 10px').set_text('Enter URL...')
         ui.notify('Enter URL...')
+        # enable the items
+        enable_GUI_items()
         return
 
     # check URL is a single video instead of a list
@@ -89,6 +91,8 @@ async def async_callback_button_download():
     if '&list=' in youtube_url:
         label_info.style('color: red; margin-top: 10px').set_text('Do not put URL of a playlist...')
         ui.notify('Do not put URL of a playlist...')
+        # enable the items
+        enable_GUI_items()
         return
 
     # check accessible URL
@@ -98,6 +102,8 @@ async def async_callback_button_download():
     if not res[0]:
         label_info.style('color: red; margin-top: 10px').set_text(res[1])
         ui.notify(res[1])
+        # enable the items
+        enable_GUI_items()
         return
     else:
         label_info.style('color: green; margin-top: 10px').set_text(res[1])
@@ -125,7 +131,6 @@ async def async_callback_button_download():
     except:
         label_info.style('color: red; margin-top: 10px').set_text('Download fail, pls check URL...')
         ui.notify('Download fail, pls check URL...')
-
 
     # enable the items
     enable_GUI_items()
