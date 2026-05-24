@@ -1,0 +1,15 @@
+.git
+.gitignore
+.dockerignore
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+downloads/
+*.mp3
+*.zip
+*.part
+build/
+dist/
+docker-compose.override.yml

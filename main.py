@@ -1,22 +1,26 @@
+from __future__ import annotations
+
 import asyncio
-import glob
-import os
+import shutil
 import threading
 import time
+import zipfile
+from pathlib import Path
 
-from nicegui import app, ui, run
+from nicegui import app, run, ui
 
-from check_validation import is_valid_youtube_url
-from downloader import download_youtube_as_mp3
+from config import load_config
+from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_url
 
-# set default saving dir
-DEFAULT_SAVING_DIR = os.path.join(os.getcwd(), "downloads")
 
-# expose the background image dir
+CONFIG = load_config()
+DOWNLOAD_DIR = Path(CONFIG["downloads"]["directory"])
+DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 app.add_static_files("/static", "static")
 
-# set background
-ui.add_head_html("""
+ui.add_head_html(
+    """
 <style>
     body {
         background-image: url('/static/background.jpg');
@@ -25,163 +29,215 @@ ui.add_head_html("""
         margin: 0;
         font-family: Arial, sans-serif;
     }
-    .container {
-        background: rgba(255, 255, 255, 0.8);
-        border-radius: 10px;
-        padding: 20px;
-        max-width: 400px;
-        margin: auto;
-        box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
-    }
-    .centered {
+    .page {
+        min-height: 100vh;
         display: flex;
-        flex-direction: column;
         justify-content: center;
         align-items: center;
-        height: 100vh;
+        padding: 32px 16px;
+    }
+    .panel {
+        width: min(760px, 100%);
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    }
+    .track-list {
+        width: 100%;
+        max-height: 260px;
+        overflow: auto;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.72);
+        padding: 8px 12px;
+    }
+    .track-row {
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        word-break: break-word;
+    }
+    .track-row:last-child {
+        border-bottom: 0;
     }
 </style>
-""")
+"""
+)
+
+current_media: MediaInfo | None = None
+current_url = ""
 
 
-# Function to delete files older than a certain time
-def delete_old_files():
-    input_url.clear()
-
-    current_time = time.time()
-    for file in glob.glob(os.path.join(DEFAULT_SAVING_DIR, "*.mp3")):
-        if os.path.getmtime(file) < current_time - 60 * 10:  # 1 hour ago
-            os.remove(file)
-            print(f"Delete file: {file}")
-
-    # Set the timer to run again in 1 hour
-    threading.Timer(60 * 3, delete_old_files).start()
-
-
-# disable the items
-def disable_GUI_items():
-    input_url.disable()
-    button_download.disable()
-    # radio_method.disable()
-
-
-# enable the items
-def enable_GUI_items():
-    input_url.enable()
-    button_download.enable()
-    # radio_method.enable()
-
-
-# use async to keep web GUI alive, put GUi control in this function, use await for backend computation
-async def async_callback_button_download():
-    # disable the items
-    disable_GUI_items()
-
-    # check empty URL
-    youtube_url = input_url.value
-    if not youtube_url:
-        label_info.style('color: red; margin-top: 10px').set_text('Enter URL...')
-        ui.notify('Enter URL...')
-        # enable the items
-        enable_GUI_items()
-        return
-
-    # check URL is a single video instead of a list
-    youtube_url = input_url.value
-    if '&list=' in youtube_url:
-        label_info.style('color: red; margin-top: 10px').set_text('Do not put URL of a playlist...')
-        ui.notify('Do not put URL of a playlist...')
-        # enable the items
-        enable_GUI_items()
-        return
-
-    # check accessible URL
-    label_info.style('color: #FF8C00; margin-top: 10px').set_text('Checking URL...')
-    ui.notify('Checking URL...')
-    res = await run.cpu_bound(is_valid_youtube_url, youtube_url)
-    if not res[0]:
-        label_info.style('color: red; margin-top: 10px').set_text(res[1])
-        ui.notify(res[1])
-        # enable the items
-        enable_GUI_items()
-        return
-    else:
-        label_info.style('color: green; margin-top: 10px').set_text(res[1])
-        ui.notify(res[1])
-
-    await asyncio.sleep(2)
-
-    # download MP3
-    label_info.style('color: red; margin-top: 10px').set_text('Preparing MP3...')
-    ui.notify('Preparing MP3...')
-    try:
-        await run.cpu_bound(download_youtube_as_mp3, youtube_url, DEFAULT_SAVING_DIR)
-        await asyncio.sleep(3)
-        label_info.style('color: green; margin-top: 10px').set_text(f'Finish, MP3 is ready.')
-        ui.notify(f'Finish, MP3 is ready.')
-
+def cleanup_downloads() -> None:
+    cutoff = time.time() - int(CONFIG["downloads"]["cleanup_after_minutes"]) * 60
+    for path in DOWNLOAD_DIR.iterdir():
         try:
-            mp3_list = glob.glob(os.path.join(DEFAULT_SAVING_DIR, "*.mp3"))
-            latest_mp3 = max(mp3_list, key=os.path.getctime)
-            ui.download(latest_mp3)
-        except:
-            label_info.style('color: red; margin-top: 10px').set_text('Unable to locate the file...')
-            ui.notify('Unable to locate the file...')
+            if path.stat().st_mtime >= cutoff:
+                continue
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"Failed to delete {path}: {exc}")
 
-    except:
-        label_info.style('color: red; margin-top: 10px').set_text('Download fail, pls check URL...')
-        ui.notify('Download fail, pls check URL...')
-
-    # enable the items
-    enable_GUI_items()
-
-
-async def async_callback_radio_method():
-    # disable the items
-    disable_GUI_items()
-
-    # save links input when switch
-    global previous_buffer
-    saved_link = input_url.value
-    input_url.clear()
-    input_url.value = previous_buffer
-    previous_buffer = saved_link
-
-    label_info.style('color: green; margin-top: 10px').set_text(f'Switch to mode: [{radio_method.value}]')
-    ui.notify(f'Switch to {radio_method.value}')
-    await asyncio.sleep(1)
-    if radio_method_options.index(radio_method.value) == 1:
-        label_info.style('color: red; margin-top: 10px').set_text('Downloading the whole playlist will be slow!')
-        ui.notify('Downloading the whole playlist will be slow!')
-        await asyncio.sleep(2)
-    label_info.style('color: green; margin-top: 10px').set_text('Downloader ready...')
-    ui.notify('Downloader ready...')
-
-    # enable the items
-    enable_GUI_items()
+    interval = int(CONFIG["downloads"]["cleanup_interval_minutes"]) * 60
+    timer = threading.Timer(interval, cleanup_downloads)
+    timer.daemon = True
+    timer.start()
 
 
-previous_buffer = ''
-radio_method_options = ['Single YouTube URL', 'YouTube Playlist URL']
+def set_busy(is_busy: bool) -> None:
+    if is_busy:
+        input_url.disable()
+        preview_button.disable()
+        download_button.disable()
+        download_all.disable()
+    else:
+        input_url.enable()
+        preview_button.enable()
+        download_button.enable()
+        download_all.enable()
 
-# define GUI items
-with ui.card().style('max-width: 800px;').classes('container'):
-    with ui.row().style('width: 100%'):
-        ui.label("YouTube MP3 Downloader").classes("text-h4 text-center")
 
-    with ui.row().style('width: 100%'):
-        radio_method = ui.radio(radio_method_options, value='Single YouTube URL', on_change=async_callback_radio_method).props('inline')
-        radio_method.disable()
-    with ui.row().style('width: 100%'):
-        input_url = ui.input(label="Pls enter YouTube URL",
-                             placeholder="https://www.youtube.com/watch?v=example").style('width: 100%;')
+def set_status(message: str, color: str = "green") -> None:
+    status_label.style(f"color: {color}; margin-top: 10px").set_text(message)
 
-    with ui.row().style('width: 100%'):
-        label_info = ui.label('Downloader ready...').style('color: green; margin-top: 10px').classes("text-h6 text-center")
 
-    with ui.row().style('width: 100%').classes('justify-end'):
-        button_download = ui.button("Download MP3", on_click=async_callback_button_download).style('margin-top: 10px')
+def clear_tracks() -> None:
+    tracks_container.clear()
+    playlist_summary.set_text("")
+    download_all.visible = False
 
-if __name__ == '__main__':
-    delete_old_files()
-    ui.run(reload=False, host="0.0.0.0", port=4655)  # reload=False is necessary for pyinstaller
+
+def render_media_info(media: MediaInfo) -> None:
+    clear_tracks()
+
+    if not media.is_playlist:
+        playlist_summary.set_text(f"Single video: {media.title}")
+        return
+
+    suffix = " Preview is truncated by config." if media.truncated else ""
+    playlist_summary.set_text(f"Playlist: {media.title} | {media.total_count} tracks found.{suffix}")
+    download_all.visible = True
+    download_all.value = True
+
+    with tracks_container:
+        with ui.column().classes("track-list"):
+            for index, entry in enumerate(media.entries, start=1):
+                ui.label(f"{index}. {entry.title}").classes("track-row")
+
+
+async def preview_url() -> None:
+    global current_media, current_url
+
+    url = (input_url.value or "").strip()
+    if not url:
+        set_status("Please enter a YouTube URL.", "red")
+        ui.notify("Please enter a YouTube URL.", type="warning")
+        return
+
+    set_busy(True)
+    clear_tracks()
+    set_status("Reading YouTube information...", "#c56a00")
+    try:
+        current_media = await run.cpu_bound(
+            inspect_youtube_url,
+            url,
+            int(CONFIG["downloads"]["playlist_preview_limit"]),
+            CONFIG["youtube"].get("user_agent"),
+        )
+        current_url = url
+        render_media_info(current_media)
+        set_status("Ready to download.", "green")
+    except Exception as exc:
+        current_media = None
+        current_url = ""
+        set_status(f"Unable to read URL: {exc}", "red")
+        ui.notify("Unable to read this YouTube URL.", type="negative")
+    finally:
+        set_busy(False)
+
+
+def build_zip(files: list[str], title: str) -> str:
+    zip_name = "".join(char if char.isalnum() or char in " ._-" else "_" for char in title).strip()
+    zip_path = Path(files[0]).parent / f"{zip_name or 'youtube-playlist'}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file in files:
+            archive.write(file, arcname=Path(file).name)
+    return str(zip_path)
+
+
+async def download_url() -> None:
+    global current_media, current_url
+
+    url = (input_url.value or "").strip()
+    if not url:
+        set_status("Please enter a YouTube URL.", "red")
+        ui.notify("Please enter a YouTube URL.", type="warning")
+        return
+
+    if current_media is None or current_url != url:
+        await preview_url()
+        if current_media is None:
+            return
+
+    if current_media.is_playlist and not download_all.value:
+        set_status("Playlist detected. Confirm 'Download all tracks' before downloading.", "red")
+        ui.notify("Confirm playlist download first.", type="warning")
+        return
+
+    set_busy(True)
+    item_text = "playlist" if current_media.is_playlist else "video"
+    set_status(f"Downloading {item_text} and converting to MP3...", "#c56a00")
+    ui.notify("Download started. Please keep this page open.")
+
+    try:
+        files = await run.cpu_bound(
+            download_youtube_as_mp3,
+            url,
+            str(DOWNLOAD_DIR),
+            str(CONFIG["downloads"]["mp3_quality"]),
+            CONFIG["youtube"].get("user_agent"),
+        )
+        await asyncio.sleep(0.5)
+        if len(files) == 1:
+            ui.download(files[0])
+            set_status("MP3 is ready. Browser download started.", "green")
+        else:
+            archive = build_zip(files, current_media.title)
+            ui.download(archive)
+            set_status(f"{len(files)} MP3 files are ready. ZIP download started.", "green")
+    except Exception as exc:
+        set_status(f"Download failed: {exc}", "red")
+        ui.notify("Download failed. Check the URL or server logs.", type="negative")
+    finally:
+        set_busy(False)
+
+
+with ui.element("main").classes("page"):
+    with ui.card().classes("panel"):
+        ui.label("YouTube MP3 Downloader").classes("text-h4")
+        input_url = ui.input(
+            label="YouTube URL",
+            placeholder="https://www.youtube.com/watch?v=... or playlist URL",
+        ).style("width: 100%;")
+
+        with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
+            preview_button = ui.button("Check URL", on_click=preview_url).props("outline")
+            download_button = ui.button("Download MP3", on_click=download_url)
+            download_all = ui.checkbox("Download all tracks").style("margin-left: auto;")
+            download_all.visible = False
+
+        status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
+        playlist_summary = ui.label("").style("width: 100%;")
+        tracks_container = ui.column().style("width: 100%;")
+
+
+if __name__ == "__main__":
+    cleanup_downloads()
+    ui.run(
+        reload=bool(CONFIG["server"]["reload"]),
+        host=str(CONFIG["server"]["host"]),
+        port=int(CONFIG["server"]["port"]),
+    )
