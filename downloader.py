@@ -17,11 +17,21 @@ class MediaEntry:
 
 
 @dataclass(frozen=True)
+class AudioFormat:
+    format_id: str
+    ext: str
+    codec: str
+    bitrate_kbps: float
+    filesize_bytes: int | None = None
+
+
+@dataclass(frozen=True)
 class MediaInfo:
     title: str
     is_playlist: bool
     entries: list[MediaEntry]
     total_count: int
+    audio_formats: list[AudioFormat]
     truncated: bool = False
 
 
@@ -57,6 +67,45 @@ def _format_download_error(exc: Exception, log_messages: list[str] | None = None
     return str(exc).replace("ERROR: ", "").strip() or "Unable to read this YouTube URL."
 
 
+def _audio_formats_from_info(info: dict[str, Any], limit: int = 3) -> list[AudioFormat]:
+    audio_formats: list[AudioFormat] = []
+    for media_format in info.get("formats") or []:
+        if media_format.get("vcodec") != "none" or media_format.get("acodec") == "none":
+            continue
+        bitrate = media_format.get("abr") or media_format.get("tbr")
+        if not isinstance(bitrate, (int, float)) or bitrate <= 0:
+            continue
+        audio_formats.append(
+            AudioFormat(
+                format_id=str(media_format.get("format_id")),
+                ext=str(media_format.get("ext") or "unknown"),
+                codec=str(media_format.get("acodec") or "unknown"),
+                bitrate_kbps=round(float(bitrate), 1),
+                filesize_bytes=media_format.get("filesize") or media_format.get("filesize_approx"),
+            )
+        )
+
+    audio_formats.sort(key=lambda item: item.bitrate_kbps, reverse=True)
+    return audio_formats[:limit]
+
+
+def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: str | None, logger: CapturingLogger) -> list[AudioFormat]:
+    first_entry_url = entries[0].get("url") or entries[0].get("webpage_url")
+    if not first_entry_url:
+        return []
+    if not str(first_entry_url).startswith(("http://", "https://")):
+        first_entry_url = f"https://www.youtube.com/watch?v={first_entry_url}"
+
+    detail_options = _base_ydl_options(user_agent)
+    detail_options["logger"] = logger
+    try:
+        with YoutubeDL(detail_options) as detail_ydl:
+            first_entry_info = detail_ydl.extract_info(first_entry_url, download=False)
+    except DownloadError:
+        return []
+    return _audio_formats_from_info(first_entry_info or {})
+
+
 def inspect_youtube_url(
     url: str,
     preview_limit: int = 50,
@@ -88,6 +137,7 @@ def inspect_youtube_url(
             is_playlist=True,
             entries=media_entries,
             total_count=info.get("playlist_count") or len(entries),
+            audio_formats=_extract_playlist_audio_formats(entries, user_agent, logger),
             truncated=len(entries) > preview_limit,
         )
 
@@ -96,13 +146,15 @@ def inspect_youtube_url(
         is_playlist=False,
         entries=[MediaEntry(title=info.get("title") or "YouTube video", url=info.get("webpage_url"))],
         total_count=1,
+        audio_formats=_audio_formats_from_info(info),
     )
 
 
 def download_youtube_as_mp3(
     url: str,
     output_folder: str,
-    mp3_quality: str = "320",
+    source_format_id: str | None = None,
+    mp3_quality: str = "192",
     user_agent: str | None = None,
 ) -> list[str]:
     logger = CapturingLogger()
@@ -113,7 +165,7 @@ def download_youtube_as_mp3(
     options["logger"] = logger
     options.update(
         {
-            "format": "bestaudio/best",
+            "format": f"{source_format_id}/bestaudio/best" if source_format_id else "bestaudio/best",
             "outtmpl": {
                 "default": str(job_dir / "%(title).200B [%(id)s].%(ext)s"),
                 "thumbnail": str(job_dir / "%(title).200B [%(id)s].%(ext)s"),

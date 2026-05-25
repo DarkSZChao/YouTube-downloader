@@ -1,10 +1,10 @@
-# YouTube MP3 Downloader
+# YouTube Audio Downloader
 
-A small NiceGUI app that downloads a YouTube video as MP3. Playlist URLs are detected, shown as a track preview, and downloaded as a ZIP archive containing MP3 files after confirmation.
+A small NiceGUI app that downloads the best audio stream YouTube provides and saves it as MP3. Playlist URLs are detected, shown as a track preview, and downloaded as a ZIP archive containing MP3 files after confirmation.
 
 ## Local run
 
-Install FFmpeg first, then run:
+Install FFmpeg and Python dependencies, then run:
 
 ```bash
 pip install -r requirements.txt
@@ -26,7 +26,6 @@ downloads:
   directory: downloads
   cleanup_after_minutes: 60
   cleanup_interval_minutes: 15
-  mp3_quality: "320"
   playlist_preview_limit: 50
 ```
 

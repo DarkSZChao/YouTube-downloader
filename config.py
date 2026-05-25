@@ -20,7 +20,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "directory": "downloads",
         "cleanup_after_minutes": 60,
         "cleanup_interval_minutes": 15,
-        "mp3_quality": "320",
         "playlist_preview_limit": 50,
     },
     "youtube": {
