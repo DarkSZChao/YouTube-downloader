@@ -1,13 +1,35 @@
 from __future__ import annotations
 
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from opencc import OpenCC
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
+
+
+OPENCC_T2S = OpenCC("t2s")
+GENERIC_MUSIC_WORDS = {
+    "audio",
+    "cover",
+    "live",
+    "lyrics",
+    "lyric",
+    "music video",
+    "mv",
+    "official",
+    "official audio",
+    "official music video",
+    "official video",
+    "video",
+    "完整版",
+    "純享版",
+    "纯享版",
+}
 
 
 @dataclass(frozen=True)
@@ -62,9 +84,24 @@ def _base_ydl_options(user_agent: str | None = None) -> dict[str, Any]:
 def _format_download_error(exc: Exception, log_messages: list[str] | None = None) -> str:
     log_text = "\n".join(log_messages or [])
     message = f"{log_text}\n{exc}"
+    clean_message = str(exc).replace("ERROR: ", "").strip()
+    if "getaddrinfo failed" in message or "Temporary failure in name resolution" in message:
+        return "Unable to reach this URL. Please check that the YouTube link is valid."
     if "WinError 10051" in message or "Failed to establish a new connection" in message:
         return "Cannot connect to YouTube from this machine. Check that the Python process can access YouTube."
-    return str(exc).replace("ERROR: ", "").strip() or "Unable to read this YouTube URL."
+    if "Unsupported URL" in message:
+        return "Unsupported URL. Please enter a valid YouTube link."
+    if "\n" in clean_message or "Traceback" in clean_message:
+        return "Unable to read this YouTube URL. Please check the link and try again."
+    return clean_message or "Unable to read this YouTube URL."
+
+
+def normalize_youtube_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    if url.startswith(("http://", "https://")):
+        return url
+    return f"https://www.youtube.com/watch?v={url}"
 
 
 def _audio_formats_from_info(info: dict[str, Any], limit: int = 3) -> list[AudioFormat]:
@@ -89,12 +126,82 @@ def _audio_formats_from_info(info: dict[str, Any], limit: int = 3) -> list[Audio
     return audio_formats[:limit]
 
 
+def _safe_filename_stem(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:180] or "youtube-audio"
+
+
+def _to_simplified_chinese(value: str) -> str:
+    return OPENCC_T2S.convert(value)
+
+
+def _clean_music_part(value: str) -> str:
+    value = re.sub(r"\s+", " ", value).strip(" -_|")
+    value = re.sub(r"(?i)\b(official|music video|video|mv|lyrics?|audio|live|cover|完整版|純享版|纯享版)\b", "", value)
+    value = re.sub(r"[\(\[【《「]\s*[\)\]】》」]", "", value)
+    value = re.sub(r"\s+", " ", value).strip(" -_|")
+    return value
+
+
+def _is_generic_music_part(value: str) -> bool:
+    normalized = _clean_music_part(value).casefold()
+    raw = re.sub(r"\s+", " ", value).strip(" -_|()[]【】《》「」").casefold()
+    return not normalized or normalized in GENERIC_MUSIC_WORDS or raw in GENERIC_MUSIC_WORDS
+
+
+def _mp3_name_from_info(info: dict[str, Any]) -> str | None:
+    title = str(info.get("title") or "").strip()
+    track = str(info.get("track") or "").strip()
+    artist = str(info.get("artist") or info.get("creator") or "").strip()
+    if track and artist and not _is_generic_music_part(track) and not _is_generic_music_part(artist):
+        return _safe_filename_stem(_to_simplified_chinese(f"{_clean_music_part(track)} - {_clean_music_part(artist)}"))
+
+    normalized_title = re.sub(r"^\s*[\[【《「\(][^\]】》」\)]{1,40}[\]】》」\)]\s*", "", title)
+
+    bracket_match = re.search(r"^\s*(?P<artist>[^【《「\[\(]{1,80})[【《「\[\(](?P<song>[^】》」\]\)]{1,120})[】》」\]\)]", normalized_title)
+    if bracket_match:
+        song = _clean_music_part(bracket_match.group("song"))
+        artist = _clean_music_part(bracket_match.group("artist"))
+        if song and artist:
+            return _safe_filename_stem(_to_simplified_chinese(f"{song} - {artist}"))
+
+    dash_match = re.search(r"^\s*(?P<artist>[^-–—|:：]{1,80})\s*[-–—|:：]\s*(?P<song>[^|]{1,140})", normalized_title)
+    if dash_match:
+        song = _clean_music_part(dash_match.group("song"))
+        artist = _clean_music_part(dash_match.group("artist"))
+        if song and artist:
+            return _safe_filename_stem(_to_simplified_chinese(f"{artist} - {song}"))
+
+    return None
+
+
+def _rename_mp3_if_music_name_found(file_path: str, info: dict[str, Any] | None) -> str:
+    source = Path(file_path)
+    target_stem = _mp3_name_from_info(info) if info else None
+    if not target_stem:
+        target_stem = source.stem
+    target_stem = _safe_filename_stem(_to_simplified_chinese(target_stem))
+    if target_stem == source.stem:
+        return file_path
+
+    target = source.with_name(f"{target_stem}{source.suffix}")
+    if target == source:
+        return file_path
+
+    counter = 2
+    while target.exists():
+        target = source.with_name(f"{target_stem} ({counter}){source.suffix}")
+        counter += 1
+
+    source.rename(target)
+    return str(target)
+
+
 def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: str | None, logger: CapturingLogger) -> list[AudioFormat]:
-    first_entry_url = entries[0].get("url") or entries[0].get("webpage_url")
+    first_entry_url = normalize_youtube_url(entries[0].get("url") or entries[0].get("webpage_url"))
     if not first_entry_url:
         return []
-    if not str(first_entry_url).startswith(("http://", "https://")):
-        first_entry_url = f"https://www.youtube.com/watch?v={first_entry_url}"
 
     detail_options = _base_ydl_options(user_agent)
     detail_options["logger"] = logger
@@ -104,6 +211,25 @@ def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: s
     except DownloadError:
         return []
     return _audio_formats_from_info(first_entry_info or {})
+
+
+def inspect_youtube_audio_formats(
+    url: str,
+    user_agent: str | None = None,
+) -> list[AudioFormat]:
+    logger = CapturingLogger()
+    options = _base_ydl_options(user_agent)
+    options["logger"] = logger
+
+    try:
+        with YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except DownloadError as exc:
+        raise ValueError(_format_download_error(exc, logger.messages)) from exc
+
+    if not info:
+        raise ValueError("Unable to read this YouTube URL.")
+    return _audio_formats_from_info(info)
 
 
 def inspect_youtube_url(
@@ -129,7 +255,10 @@ def inspect_youtube_url(
     if entries:
         shown_entries = entries[:preview_limit]
         media_entries = [
-            MediaEntry(title=entry.get("title") or "Untitled", url=entry.get("url"))
+            MediaEntry(
+                title=entry.get("title") or "Untitled",
+                url=normalize_youtube_url(entry.get("url") or entry.get("webpage_url")),
+            )
             for entry in shown_entries
         ]
         return MediaInfo(
@@ -180,15 +309,16 @@ def download_youtube_as_mp3(
         }
     )
 
+    info = None
     try:
         with YoutubeDL(options) as ydl:
-            result = ydl.download([url])
+            info = ydl.extract_info(url, download=True)
     except DownloadError as exc:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise RuntimeError(_format_download_error(exc, logger.messages)) from exc
 
     files = sorted(str(path) for path in job_dir.glob("*.mp3"))
-    if result != 0 or not files:
+    if not files:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise RuntimeError("No MP3 file was created.")
-    return files
+    return [_rename_mp3_if_music_name_found(file, info) for file in files]

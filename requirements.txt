@@ -1,3 +1,4 @@
 nicegui
 yt_dlp>=2026.3.17
 PyYAML
+opencc-python-reimplemented

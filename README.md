@@ -1,6 +1,6 @@
 # YouTube Audio Downloader
 
-A small NiceGUI app that downloads the best audio stream YouTube provides and saves it as MP3. Playlist URLs are detected, shown as a track preview, and downloaded as a ZIP archive containing MP3 files after confirmation.
+A small NiceGUI app that downloads a selected YouTube audio stream and saves it as MP3. Playlist URLs are detected, shown as a track list, and downloaded one selected track at a time.
 
 ## Local run
 

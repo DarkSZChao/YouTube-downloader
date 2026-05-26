@@ -4,13 +4,12 @@ import asyncio
 import shutil
 import threading
 import time
-import zipfile
 from pathlib import Path
 
 from nicegui import app, run, ui
 
 from config import load_config
-from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_url
+from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_audio_formats, inspect_youtube_url
 
 
 CONFIG = load_config()
@@ -38,11 +37,40 @@ ui.add_head_html(
         padding: 32px 16px;
     }
     .panel {
-        width: min(760px, 100%);
+        width: 760px;
+        max-width: calc(100vw - 32px);
+        box-sizing: border-box;
         background: rgba(255, 255, 255, 0.92);
         border-radius: 8px;
         padding: 24px;
         box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .url-input {
+        width: 100%;
+    }
+    .form-grid {
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+    .quality-row {
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 180px;
+        gap: 12px;
+        align-items: start;
+    }
+    .quality-row > * {
+        min-width: 0;
+        width: 100%;
+    }
+    .quality-row .q-field {
+        width: 100%;
+        min-width: 0;
     }
     .track-list {
         width: 100%;
@@ -61,13 +89,20 @@ ui.add_head_html(
     .track-row:last-child {
         border-bottom: 0;
     }
+    .summary-text {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
 </style>
 """
 )
 
 current_media: MediaInfo | None = None
 current_url = ""
+selected_entry_url = ""
+current_audio_formats = []
 preview_request_id = 0
+playlist_radio = None
 
 
 def cleanup_downloads() -> None:
@@ -95,24 +130,35 @@ def set_busy(is_busy: bool) -> None:
         source_quality_select.disable()
         mp3_quality_select.disable()
         download_button.disable()
-        download_all.disable()
+        if playlist_radio is not None:
+            playlist_radio.disable()
     else:
         input_url.enable()
         if current_media is not None and current_media.audio_formats:
             source_quality_select.enable()
             mp3_quality_select.enable()
         download_button.enable()
-        download_all.enable()
+        if playlist_radio is not None:
+            playlist_radio.enable()
 
 
 def set_status(message: str, color: str = "green") -> None:
     status_label.style(f"color: {color}; margin-top: 10px").set_text(message)
 
 
+def user_error_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if not message or "\n" in message or "Traceback" in message or "Exception in subprocess" in message:
+        return "Unable to read this YouTube URL. Please check the link and try again."
+    return message
+
+
 def clear_tracks() -> None:
+    global playlist_radio
+
     tracks_container.clear()
     playlist_summary.set_text("")
-    download_all.visible = False
+    playlist_radio = None
 
 
 def format_filesize(size_bytes: int | None) -> str:
@@ -132,13 +178,13 @@ def matched_mp3_quality(source_bitrate_kbps: float | None) -> str:
 
 
 def selected_source_bitrate() -> float | None:
-    if current_media is None:
+    if not current_audio_formats:
         return None
     selected_format_id = source_quality_select.value
-    for audio_format in current_media.audio_formats:
+    for audio_format in current_audio_formats:
         if audio_format.format_id == selected_format_id:
             return audio_format.bitrate_kbps
-    return current_media.audio_formats[0].bitrate_kbps if current_media.audio_formats else None
+    return current_audio_formats[0].bitrate_kbps
 
 
 def update_mp3_quality_default() -> None:
@@ -146,6 +192,9 @@ def update_mp3_quality_default() -> None:
 
 
 def clear_audio_options() -> None:
+    global current_audio_formats
+
+    current_audio_formats = []
     source_quality_select.set_options({}, value=None)
     source_quality_select.disable()
     mp3_quality_select.set_value(None)
@@ -154,47 +203,61 @@ def clear_audio_options() -> None:
 
 
 def render_audio_options(media: MediaInfo) -> None:
-    if not media.audio_formats:
+    render_audio_format_options(media.audio_formats)
+
+
+def render_audio_format_options(audio_formats) -> None:
+    global current_audio_formats
+
+    if not audio_formats:
         clear_audio_options()
         source_quality_hint.set_text("No detailed audio quality information was returned.")
         return
 
+    current_audio_formats = list(audio_formats)
     source_options = {
         audio_format.format_id: (
             f"{audio_format.bitrate_kbps:g} kbps | {audio_format.ext} | "
             f"{audio_format.codec} | {format_filesize(audio_format.filesize_bytes)}"
         )
-        for audio_format in media.audio_formats
+        for audio_format in audio_formats
     }
     mp3_options = {str(quality): f"{quality} kbps" for quality in MP3_QUALITY_CHOICES}
-    source_quality_select.set_options(source_options, value=media.audio_formats[0].format_id)
-    mp3_quality_select.set_options(mp3_options, value=matched_mp3_quality(media.audio_formats[0].bitrate_kbps))
+    source_quality_select.set_options(source_options, value=audio_formats[0].format_id)
+    mp3_quality_select.set_options(mp3_options, value=matched_mp3_quality(audio_formats[0].bitrate_kbps))
     source_quality_select.enable()
     mp3_quality_select.enable()
     source_quality_hint.set_text("Top 3 audio streams reported by yt-dlp. MP3 quality is matched slightly above the selected source.")
 
 
 def render_media_info(media: MediaInfo) -> None:
+    global selected_entry_url
+
     clear_tracks()
     render_audio_options(media)
 
     if not media.is_playlist:
+        selected_entry_url = media.entries[0].url or current_url
         playlist_summary.set_text(f"Single video: {media.title}")
         return
 
     suffix = " Preview is truncated by config." if media.truncated else ""
-    playlist_summary.set_text(f"Playlist: {media.title} | {media.total_count} tracks found.{suffix}")
-    download_all.visible = True
-    download_all.value = True
+    playlist_summary.set_text(f"Playlist: {media.title} | {media.total_count} tracks found. Select one track to download.{suffix}")
+    selected_entry_url = media.entries[0].url or ""
 
     with tracks_container:
         with ui.column().classes("track-list"):
-            for index, entry in enumerate(media.entries, start=1):
-                ui.label(f"{index}. {entry.title}").classes("track-row")
+            track_options = {
+                entry.url or "": f"{index}. {entry.title}"
+                for index, entry in enumerate(media.entries, start=1)
+                if entry.url
+            }
+            global playlist_radio
+            playlist_radio = ui.radio(track_options, value=selected_entry_url, on_change=handle_playlist_selection)
 
 
 async def preview_url() -> None:
-    global current_media, current_url
+    global current_media, current_url, selected_entry_url
 
     url = (input_url.value or "").strip()
     if not url:
@@ -218,15 +281,41 @@ async def preview_url() -> None:
     except Exception as exc:
         current_media = None
         current_url = ""
+        selected_entry_url = ""
         clear_audio_options()
-        set_status(f"Unable to read URL: {exc}", "red")
+        set_status(user_error_message(exc), "red")
         ui.notify("Unable to read this YouTube URL.", type="negative")
     finally:
         set_busy(False)
 
 
+async def handle_playlist_selection(event) -> None:
+    global selected_entry_url
+
+    selected_entry_url = event.value or ""
+    if not selected_entry_url:
+        clear_audio_options()
+        return
+
+    source_quality_select.disable()
+    mp3_quality_select.disable()
+    set_status("Reading selected track audio quality...", "#c56a00")
+    try:
+        audio_formats = await run.cpu_bound(
+            inspect_youtube_audio_formats,
+            selected_entry_url,
+            CONFIG["youtube"].get("user_agent"),
+        )
+        render_audio_format_options(audio_formats)
+        set_status("Ready to download.", "green")
+    except Exception as exc:
+        clear_audio_options()
+        set_status(user_error_message(exc), "red")
+        ui.notify("Unable to read this track's audio quality.", type="negative")
+
+
 async def handle_url_change() -> None:
-    global current_media, current_url, preview_request_id
+    global current_media, current_url, selected_entry_url, preview_request_id
 
     preview_request_id += 1
     request_id = preview_request_id
@@ -234,6 +323,7 @@ async def handle_url_change() -> None:
 
     current_media = None
     current_url = ""
+    selected_entry_url = ""
     clear_tracks()
     clear_audio_options()
 
@@ -252,17 +342,8 @@ async def handle_url_change() -> None:
     await preview_url()
 
 
-def build_zip(files: list[str], title: str) -> str:
-    zip_name = "".join(char if char.isalnum() or char in " ._-" else "_" for char in title).strip()
-    zip_path = Path(files[0]).parent / f"{zip_name or 'youtube-playlist'}.zip"
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for file in files:
-            archive.write(file, arcname=Path(file).name)
-    return str(zip_path)
-
-
 async def download_url() -> None:
-    global current_media, current_url
+    global current_media, current_url, selected_entry_url
 
     url = (input_url.value or "").strip()
     if not url:
@@ -275,33 +356,29 @@ async def download_url() -> None:
         if current_media is None:
             return
 
-    if current_media.is_playlist and not download_all.value:
-        set_status("Playlist detected. Confirm 'Download all tracks' before downloading.", "red")
-        ui.notify("Confirm playlist download first.", type="warning")
+    download_url_value = selected_entry_url if current_media.is_playlist else url
+    if not download_url_value:
+        set_status("Please select a playlist track before downloading.", "red")
+        ui.notify("Select one playlist track first.", type="warning")
         return
 
     set_busy(True)
-    item_text = "playlist" if current_media.is_playlist else "video"
+    item_text = "selected track" if current_media.is_playlist else "video"
     set_status(f"Downloading {item_text} and saving as MP3...", "#c56a00")
     ui.notify("Download started. Please keep this page open.")
 
     try:
         files = await run.cpu_bound(
             download_youtube_as_mp3,
-            url,
+            download_url_value,
             str(DOWNLOAD_DIR),
             source_quality_select.value,
             str(mp3_quality_select.value or matched_mp3_quality(selected_source_bitrate())),
             CONFIG["youtube"].get("user_agent"),
         )
         await asyncio.sleep(0.5)
-        if len(files) == 1:
-            ui.download(files[0])
-            set_status("MP3 is ready. Browser download started.", "green")
-        else:
-            archive = build_zip(files, current_media.title)
-            ui.download(archive)
-            set_status(f"{len(files)} MP3 files are ready. ZIP download started.", "green")
+        ui.download(files[0])
+        set_status("MP3 is ready. Browser download started.", "green")
     except Exception as exc:
         set_status(f"Download failed: {exc}", "red")
         ui.notify("Download failed. Check the URL or server logs.", type="negative")
@@ -312,36 +389,35 @@ async def download_url() -> None:
 with ui.element("main").classes("page"):
     with ui.card().classes("panel"):
         ui.label("YouTube Audio Downloader").classes("text-h4")
-        input_url = ui.input(
-            label="YouTube URL",
-            placeholder="https://www.youtube.com/watch?v=... or playlist URL",
-            on_change=handle_url_change,
-        ).style("width: 100%;")
-        input_url.props("debounce=900")
+        with ui.element("div").classes("form-grid"):
+            input_url = ui.input(
+                label="YouTube URL",
+                placeholder="https://www.youtube.com/watch?v=... or playlist URL",
+                on_change=handle_url_change,
+            ).classes("url-input")
+            input_url.props("debounce=900")
 
-        with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
-            source_quality_select = ui.select(
-                {},
-                label="YouTube source quality",
-                value=None,
-                on_change=update_mp3_quality_default,
-            ).style("flex: 1 1 360px;")
-            mp3_quality_select = ui.select(
-                {str(quality): f"{quality} kbps" for quality in MP3_QUALITY_CHOICES},
-                label="MP3 quality",
-                value=None,
-            ).style("width: 180px;")
+            with ui.element("div").classes("quality-row"):
+                source_quality_select = ui.select(
+                    {},
+                    label="YouTube source quality",
+                    value=None,
+                    on_change=update_mp3_quality_default,
+                ).style("width: 100%; min-width: 0;")
+                mp3_quality_select = ui.select(
+                    {str(quality): f"{quality} kbps" for quality in MP3_QUALITY_CHOICES},
+                    label="MP3 quality",
+                    value=None,
+                ).style("width: 100%; min-width: 0;")
         source_quality_select.disable()
         mp3_quality_select.disable()
         source_quality_hint = ui.label("").style("color: #555; margin-top: -8px;")
 
         with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
             download_button = ui.button("Download Audio", on_click=download_url)
-            download_all = ui.checkbox("Download all tracks").style("margin-left: auto;")
-            download_all.visible = False
 
         status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
-        playlist_summary = ui.label("").style("width: 100%;")
+        playlist_summary = ui.label("").classes("summary-text").style("width: 100%;")
         tracks_container = ui.column().style("width: 100%;")
 
 
