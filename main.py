@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
 
 from nicegui import app, run, ui
 
-from config import load_config
+from config import load_config, load_config_file, save_config_file
 from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_audio_formats, inspect_youtube_url
 
 
@@ -94,7 +96,8 @@ ui.add_head_html(
         word-break: break-word;
     }
 </style>
-"""
+""",
+    shared=True,
 )
 
 current_media: MediaInfo | None = None
@@ -122,6 +125,24 @@ def cleanup_downloads() -> None:
     timer = threading.Timer(interval, cleanup_downloads)
     timer.daemon = True
     timer.start()
+
+
+def restart_server() -> None:
+    def restart() -> None:
+        time.sleep(0.4)
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    threading.Thread(target=restart, daemon=True).start()
+
+
+def to_positive_int(value, field_name: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a number.") from exc
+    if number <= 0:
+        raise ValueError(f"{field_name} must be greater than 0.")
+    return number
 
 
 def set_busy(is_busy: bool) -> None:
@@ -228,6 +249,87 @@ def render_audio_format_options(audio_formats) -> None:
     source_quality_select.enable()
     mp3_quality_select.enable()
     source_quality_hint.set_text("Top 3 audio streams reported by yt-dlp. MP3 quality is matched slightly above the selected source.")
+
+
+@ui.page("/config")
+def config_page() -> None:
+    current_config = load_config_file()
+
+    with ui.element("main").classes("page"):
+        with ui.card().classes("panel"):
+            with ui.row().classes("items-center justify-between").style("width: 100%; gap: 12px;"):
+                ui.label("Configuration").classes("text-h4")
+                ui.button("Back", icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props("flat")
+
+            with ui.element("div").classes("form-grid"):
+                ui.label("Server").classes("text-h6").style("margin-top: 8px;")
+                server_host = ui.input("Host", value=str(current_config["server"]["host"])).classes("url-input")
+                server_port = ui.number("Port", value=int(current_config["server"]["port"]), min=1, max=65535).classes("url-input")
+                server_reload = ui.checkbox("Reload while developing", value=bool(current_config["server"]["reload"]))
+
+                ui.label("Downloads").classes("text-h6").style("margin-top: 8px;")
+                download_directory = ui.input("Download directory", value=str(current_config["downloads"]["directory"])).classes("url-input")
+                cleanup_after = ui.number(
+                    "Cleanup files older than minutes",
+                    value=int(current_config["downloads"]["cleanup_after_minutes"]),
+                    min=1,
+                ).classes("url-input")
+                cleanup_interval = ui.number(
+                    "Cleanup check interval minutes",
+                    value=int(current_config["downloads"]["cleanup_interval_minutes"]),
+                    min=1,
+                ).classes("url-input")
+                playlist_limit = ui.number(
+                    "Playlist preview limit",
+                    value=int(current_config["downloads"]["playlist_preview_limit"]),
+                    min=1,
+                ).classes("url-input")
+
+                ui.label("YouTube").classes("text-h6").style("margin-top: 8px;")
+                user_agent = ui.textarea("User agent", value=str(current_config["youtube"]["user_agent"])).classes("url-input")
+                user_agent.props("autogrow")
+
+            status = ui.label("").style("color: #555; margin-top: 10px")
+
+            restart_dialog = ui.dialog()
+            with restart_dialog, ui.card().style("width: 420px; max-width: calc(100vw - 32px);"):
+                ui.label("Configuration saved").classes("text-h6")
+                ui.label("Restart the service now so the main page uses the new settings?")
+                with ui.row().classes("justify-end").style("width: 100%; gap: 8px;"):
+                    ui.button("Later", on_click=restart_dialog.close).props("flat")
+                    ui.button("Restart", icon="refresh", on_click=restart_server)
+
+            def save_settings() -> None:
+                try:
+                    new_config = {
+                        "server": {
+                            "host": (server_host.value or "").strip() or "0.0.0.0",
+                            "port": to_positive_int(server_port.value, "Port"),
+                            "reload": bool(server_reload.value),
+                        },
+                        "downloads": {
+                            "directory": (download_directory.value or "").strip() or "downloads",
+                            "cleanup_after_minutes": to_positive_int(cleanup_after.value, "Cleanup age"),
+                            "cleanup_interval_minutes": to_positive_int(cleanup_interval.value, "Cleanup interval"),
+                            "playlist_preview_limit": to_positive_int(playlist_limit.value, "Playlist preview limit"),
+                        },
+                        "youtube": {
+                            "user_agent": (user_agent.value or "").strip(),
+                        },
+                    }
+                    if new_config["server"]["port"] > 65535:
+                        raise ValueError("Port must be between 1 and 65535.")
+                    save_config_file(new_config)
+                except ValueError as exc:
+                    status.style("color: red; margin-top: 10px").set_text(str(exc))
+                    ui.notify(str(exc), type="negative")
+                    return
+
+                status.style("color: green; margin-top: 10px").set_text("Saved to config.yaml.")
+                restart_dialog.open()
+
+            with ui.row().classes("items-center").style("width: 100%; gap: 12px; margin-top: 12px;"):
+                ui.button("Save", icon="save", on_click=save_settings)
 
 
 def render_media_info(media: MediaInfo) -> None:
@@ -386,39 +488,46 @@ async def download_url() -> None:
         set_busy(False)
 
 
-with ui.element("main").classes("page"):
-    with ui.card().classes("panel"):
-        ui.label("YouTube Audio Downloader").classes("text-h4")
-        with ui.element("div").classes("form-grid"):
-            input_url = ui.input(
-                label="YouTube URL",
-                placeholder="https://www.youtube.com/watch?v=... or playlist URL",
-                on_change=handle_url_change,
-            ).classes("url-input")
-            input_url.props("debounce=900")
+@ui.page("/")
+def main_page() -> None:
+    global input_url, source_quality_select, mp3_quality_select, source_quality_hint
+    global download_button, status_label, playlist_summary, tracks_container
 
-            with ui.element("div").classes("quality-row"):
-                source_quality_select = ui.select(
-                    {},
-                    label="YouTube source quality",
-                    value=None,
-                    on_change=update_mp3_quality_default,
-                ).style("width: 100%; min-width: 0;")
-                mp3_quality_select = ui.select(
-                    {str(quality): f"{quality} kbps" for quality in MP3_QUALITY_CHOICES},
-                    label="MP3 quality",
-                    value=None,
-                ).style("width: 100%; min-width: 0;")
-        source_quality_select.disable()
-        mp3_quality_select.disable()
-        source_quality_hint = ui.label("").style("color: #555; margin-top: -8px;")
+    with ui.element("main").classes("page"):
+        with ui.card().classes("panel"):
+            with ui.row().classes("items-center justify-between").style("width: 100%; gap: 12px;"):
+                ui.label("YouTube Audio Downloader").classes("text-h4")
+                ui.button("Settings", icon="settings", on_click=lambda: ui.navigate.to("/config")).props("flat")
+            with ui.element("div").classes("form-grid"):
+                input_url = ui.input(
+                    label="YouTube URL",
+                    placeholder="https://www.youtube.com/watch?v=... or playlist URL",
+                    on_change=handle_url_change,
+                ).classes("url-input")
+                input_url.props("debounce=900")
 
-        with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
-            download_button = ui.button("Download Audio", on_click=download_url)
+                with ui.element("div").classes("quality-row"):
+                    source_quality_select = ui.select(
+                        {},
+                        label="YouTube source quality",
+                        value=None,
+                        on_change=update_mp3_quality_default,
+                    ).style("width: 100%; min-width: 0;")
+                    mp3_quality_select = ui.select(
+                        {str(quality): f"{quality} kbps" for quality in MP3_QUALITY_CHOICES},
+                        label="MP3 quality",
+                        value=None,
+                    ).style("width: 100%; min-width: 0;")
+            source_quality_select.disable()
+            mp3_quality_select.disable()
+            source_quality_hint = ui.label("").style("color: #555; margin-top: -8px;")
 
-        status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
-        playlist_summary = ui.label("").classes("summary-text").style("width: 100%;")
-        tracks_container = ui.column().style("width: 100%;")
+            with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
+                download_button = ui.button("Download Audio", on_click=download_url)
+
+            status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
+            playlist_summary = ui.label("").classes("summary-text").style("width: 100%;")
+            tracks_container = ui.column().style("width: 100%;")
 
 
 if __name__ == "__main__":
@@ -427,4 +536,5 @@ if __name__ == "__main__":
         reload=bool(CONFIG["server"]["reload"]),
         host=str(CONFIG["server"]["host"]),
         port=int(CONFIG["server"]["port"]),
+        show=False,
     )

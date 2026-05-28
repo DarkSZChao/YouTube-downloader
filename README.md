@@ -15,7 +15,7 @@ Open `http://localhost:4655`.
 
 ## Configuration
 
-Edit `config.yaml`:
+Open `http://localhost:4655/config` or use the Settings button on the main page. Saving writes the values to `config.yaml` and asks whether to restart the service.
 
 ```yaml
 server:

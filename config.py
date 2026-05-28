@@ -39,6 +39,15 @@ def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 
 
 def load_config() -> dict[str, Any]:
+    config = load_config_file()
+    download_dir = Path(config["downloads"]["directory"])
+    if not download_dir.is_absolute():
+        download_dir = BASE_DIR / download_dir
+    config["downloads"]["directory"] = str(download_dir)
+    return config
+
+
+def load_config_file() -> dict[str, Any]:
     if not CONFIG_PATH.exists():
         return deepcopy(DEFAULT_CONFIG)
 
@@ -49,8 +58,9 @@ def load_config() -> dict[str, Any]:
         raise ValueError("config.yaml must contain a YAML mapping at the top level.")
 
     config = _merge_config(DEFAULT_CONFIG, loaded)
-    download_dir = Path(config["downloads"]["directory"])
-    if not download_dir.is_absolute():
-        download_dir = BASE_DIR / download_dir
-    config["downloads"]["directory"] = str(download_dir)
     return config
+
+
+def save_config_file(config: dict[str, Any]) -> None:
+    with CONFIG_PATH.open("w", encoding="utf-8") as file:
+        yaml.safe_dump(config, file, sort_keys=False, allow_unicode=True)
