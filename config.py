@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,10 @@ def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 
 def load_config() -> dict[str, Any]:
     config = load_config_file()
+    app_port = os.getenv("APP_PORT")
+    if app_port:
+        config["server"]["port"] = int(app_port)
+
     download_dir = Path(config["downloads"]["directory"])
     if not download_dir.is_absolute():
         download_dir = BASE_DIR / download_dir
