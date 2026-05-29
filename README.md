@@ -37,6 +37,14 @@ Build and run:
 docker compose up -d --build
 ```
 
+The page shows the version from the committed `VERSION` file. Enable the repository Git hook once on your development machine so each commit updates and stages `VERSION` automatically:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+After that, normal commits will update the badge value, for example `version: 2026-05-29 18:44`.
+
 The app is exposed on port `4655` by default. Override the host port with:
 
 ```bash

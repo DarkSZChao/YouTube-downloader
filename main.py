@@ -19,6 +19,8 @@ from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_audio
 CONFIG = load_config()
 DOWNLOAD_DIR = Path(CONFIG["downloads"]["directory"])
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+VERSION_PATH = Path(__file__).resolve().parent / "VERSION"
+APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "unknown"
 MP3_QUALITY_CHOICES = (64, 96, 128, 160, 192, 256, 320)
 BACKGROUND_DIR = Path("background")
 BACKGROUND_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
@@ -162,6 +164,20 @@ ui.add_head_html(
         overflow-wrap: anywhere;
         word-break: break-word;
     }
+    .version-badge {
+        position: fixed;
+        right: 14px;
+        bottom: 10px;
+        z-index: 1000;
+        color: rgba(255, 255, 255, 0.88);
+        background: rgba(0, 0, 0, 0.38);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        line-height: 1.2;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+        user-select: none;
+    }
 </style>
 <script>
     window.addEventListener('load', () => {
@@ -182,6 +198,10 @@ selected_entry_url = ""
 current_audio_formats = []
 preview_request_id = 0
 playlist_radio = None
+
+
+def render_version_badge() -> None:
+    ui.label(f"version: {APP_VERSION}").classes("version-badge")
 
 
 def cleanup_downloads() -> None:
@@ -414,6 +434,8 @@ def config_page() -> None:
             with ui.row().classes("items-center").style("width: 100%; gap: 12px; margin-top: 12px;"):
                 ui.button("Save", icon="save", on_click=save_settings)
 
+    render_version_badge()
+
 
 def render_media_info(media: MediaInfo) -> None:
     global selected_entry_url
@@ -611,6 +633,8 @@ def main_page() -> None:
             status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
             playlist_summary = ui.label("").classes("summary-text").style("width: 100%;")
             tracks_container = ui.column().style("width: 100%;")
+
+    render_version_badge()
 
 
 if __name__ == "__main__":
