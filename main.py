@@ -8,12 +8,19 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.responses import FileResponse, Response
 from nicegui import app, run, ui
 
 from config import load_config, load_config_file, save_config_file
-from downloader import MediaInfo, download_youtube_as_mp3, inspect_youtube_audio_formats, inspect_youtube_url
+from downloader import (
+    MediaInfo,
+    download_youtube_as_mp3,
+    download_youtube_selection_as_zip,
+    inspect_youtube_audio_formats,
+    inspect_youtube_url,
+)
 
 
 CONFIG = load_config()
@@ -195,9 +202,11 @@ ui.add_head_html(
 current_media: MediaInfo | None = None
 current_url = ""
 selected_entry_url = ""
+selected_entry_urls: list[str] = []
 current_audio_formats = []
 preview_request_id = 0
-playlist_radio = None
+playlist_quality_request_id = 0
+playlist_checkboxes = []
 
 
 def render_version_badge() -> None:
@@ -247,16 +256,28 @@ def set_busy(is_busy: bool) -> None:
         source_quality_select.disable()
         mp3_quality_select.disable()
         download_button.disable()
-        if playlist_radio is not None:
-            playlist_radio.disable()
+        for checkbox in playlist_checkboxes:
+            checkbox.disable()
     else:
         input_url.enable()
         if current_media is not None and current_media.audio_formats:
             source_quality_select.enable()
             mp3_quality_select.enable()
+        update_download_button_state()
+        update_playlist_quality_controls()
+        for checkbox in playlist_checkboxes:
+            checkbox.enable()
+
+
+def has_downloadable_media() -> bool:
+    return current_media is not None and current_url == (input_url.value or "").strip()
+
+
+def update_download_button_state() -> None:
+    if has_downloadable_media():
         download_button.enable()
-        if playlist_radio is not None:
-            playlist_radio.enable()
+    else:
+        download_button.disable()
 
 
 def set_status(message: str, color: str = "green") -> None:
@@ -270,12 +291,39 @@ def user_error_message(exc: Exception) -> str:
     return message
 
 
-def clear_tracks() -> None:
-    global playlist_radio
+def is_supported_youtube_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
 
+    host = parsed.netloc.casefold()
+    query = parse_qs(parsed.query)
+    path = parsed.path.rstrip("/")
+
+    if host in {"youtu.be", "www.youtu.be"}:
+        return bool(path and path != "/")
+
+    if host not in {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}:
+        return False
+
+    if path == "/watch":
+        return bool(query.get("v") or query.get("list"))
+    if path == "/playlist":
+        return bool(query.get("list"))
+    if path.startswith(("/shorts/", "/live/", "/embed/")):
+        return len(path.split("/")) >= 3
+
+    return False
+
+
+def clear_tracks() -> None:
+    global playlist_checkboxes, playlist_quality_request_id
+
+    playlist_quality_request_id += 1
     tracks_container.clear()
     playlist_summary.set_text("")
-    playlist_radio = None
+    playlist_checkboxes = []
 
 
 def format_filesize(size_bytes: int | None) -> str:
@@ -317,6 +365,32 @@ def clear_audio_options() -> None:
     mp3_quality_select.set_value(None)
     mp3_quality_select.disable()
     source_quality_hint.set_text("")
+
+
+def update_playlist_quality_controls() -> None:
+    if current_media is None or not current_media.is_playlist:
+        return
+    if len(selected_entry_urls) > 1:
+        source_quality_select.disable()
+        mp3_quality_select.disable()
+        source_quality_hint.set_text("")
+    else:
+        if current_audio_formats:
+            source_quality_select.enable()
+            mp3_quality_select.enable()
+
+
+def set_playlist_selection_busy(is_busy: bool) -> None:
+    if is_busy:
+        download_button.disable()
+        for checkbox in playlist_checkboxes:
+            checkbox.disable()
+        return
+
+    download_button.enable()
+    for checkbox in playlist_checkboxes:
+        checkbox.enable()
+    update_playlist_quality_controls()
 
 
 def render_audio_options(media: MediaInfo) -> None:
@@ -438,38 +512,57 @@ def config_page() -> None:
 
 
 def render_media_info(media: MediaInfo) -> None:
-    global selected_entry_url
+    global selected_entry_url, selected_entry_urls, playlist_checkboxes
 
     clear_tracks()
     render_audio_options(media)
 
     if not media.is_playlist:
         selected_entry_url = media.entries[0].url or current_url
+        selected_entry_urls = [selected_entry_url] if selected_entry_url else []
         playlist_summary.set_text(f"Single video: {media.title}")
         return
 
     suffix = " Preview is truncated by config." if media.truncated else ""
-    playlist_summary.set_text(f"Playlist: {media.title} | {media.total_count} tracks found. Select one track to download.{suffix}")
+    playlist_summary.set_text(f"Playlist: {media.title} | {media.total_count} tracks found. Select tracks to download.{suffix}")
     selected_entry_url = media.entries[0].url or ""
+    selected_entry_urls = [selected_entry_url] if selected_entry_url else []
+    playlist_checkboxes = []
 
     with tracks_container:
         with ui.column().classes("track-list"):
-            track_options = {
-                entry.url or "": f"{index}. {entry.title}"
-                for index, entry in enumerate(media.entries, start=1)
-                if entry.url
-            }
-            global playlist_radio
-            playlist_radio = ui.radio(track_options, value=selected_entry_url, on_change=handle_playlist_selection)
+            for index, entry in enumerate(media.entries, start=1):
+                if not entry.url:
+                    continue
+                checkbox = ui.checkbox(
+                    f"{index}. {entry.title}",
+                    value=entry.url == selected_entry_url,
+                    on_change=handle_playlist_selection_change,
+                ).classes("track-row")
+                checkbox.entry_url = entry.url
+                playlist_checkboxes.append(checkbox)
 
 
 async def preview_url() -> None:
-    global current_media, current_url, selected_entry_url
+    global current_media, current_url, selected_entry_url, selected_entry_urls
 
     url = (input_url.value or "").strip()
     if not url:
         set_status("Please enter a YouTube URL.", "red")
         ui.notify("Please enter a YouTube URL.", type="warning")
+        update_download_button_state()
+        return
+
+    if not is_supported_youtube_url(url):
+        current_media = None
+        current_url = ""
+        selected_entry_url = ""
+        selected_entry_urls = []
+        clear_tracks()
+        clear_audio_options()
+        set_status("Please enter a valid YouTube video or playlist URL.", "red")
+        ui.notify("Enter a valid YouTube video or playlist URL.", type="warning")
+        update_download_button_state()
         return
 
     set_busy(True)
@@ -489,6 +582,7 @@ async def preview_url() -> None:
         current_media = None
         current_url = ""
         selected_entry_url = ""
+        selected_entry_urls = []
         clear_audio_options()
         set_status(user_error_message(exc), "red")
         ui.notify("Unable to read this YouTube URL.", type="negative")
@@ -496,16 +590,29 @@ async def preview_url() -> None:
         set_busy(False)
 
 
-async def handle_playlist_selection(event) -> None:
-    global selected_entry_url
+async def handle_playlist_selection_change(event) -> None:
+    global selected_entry_url, selected_entry_urls, playlist_quality_request_id
 
-    selected_entry_url = event.value or ""
+    playlist_quality_request_id += 1
+    request_id = playlist_quality_request_id
+
+    selected_entry_urls = [checkbox.entry_url for checkbox in playlist_checkboxes if checkbox.value and checkbox.entry_url]
+    selected_entry_url = selected_entry_urls[0] if len(selected_entry_urls) == 1 else ""
+    update_playlist_quality_controls()
+
+    if len(selected_entry_urls) > 1:
+        clear_audio_options()
+        update_playlist_quality_controls()
+        set_status("Ready to download selected tracks at best available quality.", "green")
+        return
+
     if not selected_entry_url:
         clear_audio_options()
         return
 
     source_quality_select.disable()
     mp3_quality_select.disable()
+    set_playlist_selection_busy(True)
     set_status("Reading selected track audio quality...", "#c56a00")
     try:
         audio_formats = await run.cpu_bound(
@@ -513,16 +620,23 @@ async def handle_playlist_selection(event) -> None:
             selected_entry_url,
             CONFIG["youtube"].get("user_agent"),
         )
+        if request_id != playlist_quality_request_id or len(selected_entry_urls) != 1 or selected_entry_url != selected_entry_urls[0]:
+            return
         render_audio_format_options(audio_formats)
         set_status("Ready to download.", "green")
     except Exception as exc:
+        if request_id != playlist_quality_request_id:
+            return
         clear_audio_options()
         set_status(user_error_message(exc), "red")
         ui.notify("Unable to read this track's audio quality.", type="negative")
+    finally:
+        if request_id == playlist_quality_request_id:
+            set_playlist_selection_busy(False)
 
 
 async def handle_url_change() -> None:
-    global current_media, current_url, selected_entry_url, preview_request_id
+    global current_media, current_url, selected_entry_url, selected_entry_urls, preview_request_id
 
     preview_request_id += 1
     request_id = preview_request_id
@@ -531,15 +645,23 @@ async def handle_url_change() -> None:
     current_media = None
     current_url = ""
     selected_entry_url = ""
+    selected_entry_urls = []
     clear_tracks()
     clear_audio_options()
 
     if not url:
         set_status("Downloader ready.", "green")
+        update_download_button_state()
         return
 
     if not url.startswith(("http://", "https://")):
         set_status("Enter a complete YouTube URL to inspect it.", "#c56a00")
+        update_download_button_state()
+        return
+
+    if not is_supported_youtube_url(url):
+        set_status("Please enter a valid YouTube video or playlist URL.", "red")
+        update_download_button_state()
         return
 
     await asyncio.sleep(0.35)
@@ -550,12 +672,25 @@ async def handle_url_change() -> None:
 
 
 async def download_url() -> None:
-    global current_media, current_url, selected_entry_url
+    global current_media, current_url, selected_entry_url, selected_entry_urls
 
     url = (input_url.value or "").strip()
     if not url:
         set_status("Please enter a YouTube URL.", "red")
         ui.notify("Please enter a YouTube URL.", type="warning")
+        update_download_button_state()
+        return
+
+    if not is_supported_youtube_url(url):
+        current_media = None
+        current_url = ""
+        selected_entry_url = ""
+        selected_entry_urls = []
+        clear_tracks()
+        clear_audio_options()
+        set_status("Please enter a valid YouTube video or playlist URL.", "red")
+        ui.notify("Enter a valid YouTube video or playlist URL.", type="warning")
+        update_download_button_state()
         return
 
     if current_media is None or current_url != url:
@@ -563,21 +698,33 @@ async def download_url() -> None:
         if current_media is None:
             return
 
-    download_url_value = selected_entry_url if current_media.is_playlist else url
-    if not download_url_value:
-        set_status("Please select a playlist track before downloading.", "red")
-        ui.notify("Select one playlist track first.", type="warning")
+    selected_urls = selected_entry_urls if current_media.is_playlist else [url]
+    if not selected_urls:
+        set_status("Please select at least one playlist track before downloading.", "red")
+        ui.notify("Select at least one playlist track first.", type="warning")
         return
 
     set_busy(True)
-    item_text = "selected track" if current_media.is_playlist else "video"
+    item_text = "selected tracks" if current_media.is_playlist and len(selected_urls) > 1 else "selected track" if current_media.is_playlist else "video"
     set_status(f"Downloading {item_text} and saving as MP3...", "#c56a00")
     ui.notify("Download started. Please keep this page open.")
 
     try:
+        if current_media.is_playlist and len(selected_urls) > 1:
+            zip_file = await run.cpu_bound(
+                download_youtube_selection_as_zip,
+                selected_urls,
+                str(DOWNLOAD_DIR),
+                CONFIG["youtube"].get("user_agent"),
+            )
+            await asyncio.sleep(0.5)
+            ui.download(zip_file)
+            set_status("ZIP is ready. Browser download started.", "green")
+            return
+
         files = await run.cpu_bound(
             download_youtube_as_mp3,
-            download_url_value,
+            selected_urls[0],
             str(DOWNLOAD_DIR),
             source_quality_select.value,
             str(mp3_quality_select.value or matched_mp3_quality(selected_source_bitrate())),
@@ -629,6 +776,7 @@ def main_page() -> None:
 
             with ui.row().classes("items-center").style("width: 100%; gap: 12px;"):
                 download_button = ui.button("Download Audio", on_click=download_url)
+            download_button.disable()
 
             status_label = ui.label("Downloader ready.").style("color: green; margin-top: 10px").classes("text-subtitle1")
             playlist_summary = ui.label("").classes("summary-text").style("width: 100%;")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -198,6 +199,17 @@ def _rename_mp3_if_music_name_found(file_path: str, info: dict[str, Any] | None)
     return str(target)
 
 
+def _unique_zip_name(zip_file: zipfile.ZipFile, filename: str) -> str:
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    candidate = filename
+    counter = 2
+    while candidate in zip_file.namelist():
+        candidate = f"{stem} ({counter}){suffix}"
+        counter += 1
+    return candidate
+
+
 def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: str | None, logger: CapturingLogger) -> list[AudioFormat]:
     first_entry_url = normalize_youtube_url(entries[0].get("url") or entries[0].get("webpage_url"))
     if not first_entry_url:
@@ -286,9 +298,24 @@ def download_youtube_as_mp3(
     mp3_quality: str = "192",
     user_agent: str | None = None,
 ) -> list[str]:
-    logger = CapturingLogger()
     job_dir = Path(output_folder) / uuid.uuid4().hex
     job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        return _download_youtube_as_mp3_to_dir(url, job_dir, source_format_id, mp3_quality, user_agent)
+    except Exception:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+
+
+def _download_youtube_as_mp3_to_dir(
+    url: str,
+    job_dir: Path,
+    source_format_id: str | None = None,
+    mp3_quality: str = "192",
+    user_agent: str | None = None,
+) -> list[str]:
+    logger = CapturingLogger()
+    before_files = {path.resolve() for path in job_dir.glob("*.mp3")}
 
     options = _base_ydl_options(user_agent)
     options["logger"] = logger
@@ -314,11 +341,50 @@ def download_youtube_as_mp3(
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
     except DownloadError as exc:
-        shutil.rmtree(job_dir, ignore_errors=True)
         raise RuntimeError(_format_download_error(exc, logger.messages)) from exc
 
-    files = sorted(str(path) for path in job_dir.glob("*.mp3"))
+    files = sorted(str(path) for path in job_dir.glob("*.mp3") if path.resolve() not in before_files)
     if not files:
-        shutil.rmtree(job_dir, ignore_errors=True)
         raise RuntimeError("No MP3 file was created.")
     return [_rename_mp3_if_music_name_found(file, info) for file in files]
+
+
+def download_youtube_selection_as_zip(
+    urls: list[str],
+    output_folder: str,
+    user_agent: str | None = None,
+) -> str:
+    if not urls:
+        raise RuntimeError("No playlist tracks were selected.")
+
+    batch_dir = Path(output_folder) / uuid.uuid4().hex
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "youtube-audio-selection.zip"
+    downloaded_files: list[str] = []
+
+    try:
+        for url in urls:
+            audio_formats = inspect_youtube_audio_formats(url, user_agent)
+            best_format = audio_formats[0] if audio_formats else None
+            source_format_id = best_format.format_id if best_format else None
+            mp3_quality = "192"
+            if best_format:
+                for quality in (64, 96, 128, 160, 192, 256, 320):
+                    if quality > best_format.bitrate_kbps:
+                        mp3_quality = str(quality)
+                        break
+                else:
+                    mp3_quality = "320"
+            downloaded_files.extend(
+                _download_youtube_as_mp3_to_dir(url, batch_dir, source_format_id, mp3_quality, user_agent)
+            )
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for file in downloaded_files:
+                file_path = Path(file)
+                archive.write(file_path, _unique_zip_name(archive, file_path.name))
+    except Exception:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+
+    return str(zip_path)
