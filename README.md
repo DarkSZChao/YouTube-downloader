@@ -1,5 +1,7 @@
 # YouTube Audio Downloader
 
+[中文说明](README.zh-CN.md)
+
 A small NiceGUI app that downloads a selected YouTube audio stream and saves it as MP3. Playlist URLs are detected, shown as a track list, and downloaded one selected track at a time.
 
 ## Local run
@@ -42,6 +44,8 @@ The page shows the version from the committed `VERSION` file. Enable the reposit
 ```bash
 git config core.hooksPath .githooks
 ```
+
+If you need the version number to update automatically, add `hooksPath = .githooks` under the `[core]` section in `.git/config`.
 
 After that, normal commits will update the badge value, for example `version: 2026-05-29 18:44`.
 
