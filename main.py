@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import shutil
 import sys
 import threading
 import time
 from pathlib import Path
 
+from fastapi.responses import FileResponse, Response
 from nicegui import app, run, ui
 
 from config import load_config, load_config_file, save_config_file
@@ -18,14 +20,79 @@ CONFIG = load_config()
 DOWNLOAD_DIR = Path(CONFIG["downloads"]["directory"])
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MP3_QUALITY_CHOICES = (64, 96, 128, 160, 192, 256, 320)
+BACKGROUND_DIR = Path("background")
+BACKGROUND_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+BACKGROUND_ROTATION_SECONDS = 24 * 60 * 60
+current_background_path: Path | None = None
+current_background_started_at = 0.0
 
-app.add_static_files("/static", "static")
+app.add_static_files("/background-files", str(BACKGROUND_DIR))
+
+
+def list_background_images() -> list[Path]:
+    if not BACKGROUND_DIR.exists():
+        return []
+    return sorted(
+        path
+        for path in BACKGROUND_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in BACKGROUND_IMAGE_EXTENSIONS
+    )
+
+
+def choose_background_image(force: bool = False) -> Path | None:
+    global current_background_path, current_background_started_at
+
+    now = time.time()
+    if (
+        not force
+        and current_background_path is not None
+        and current_background_path.exists()
+        and now - current_background_started_at < BACKGROUND_ROTATION_SECONDS
+    ):
+        return current_background_path
+
+    images = list_background_images()
+    if not images:
+        current_background_path = None
+        current_background_started_at = now
+        return None
+
+    current_background_path = random.choice(images)
+    current_background_started_at = now
+    return current_background_path
+
+
+def rotate_background() -> None:
+    choose_background_image(force=True)
+    schedule_background_rotation()
+
+
+def schedule_background_rotation() -> None:
+    timer = threading.Timer(BACKGROUND_ROTATION_SECONDS, rotate_background)
+    timer.daemon = True
+    timer.start()
+
+
+@app.get("/background/current")
+def current_background() -> Response:
+    background_path = choose_background_image()
+    if background_path is None:
+        return Response(status_code=404)
+    return FileResponse(
+        background_path,
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+        },
+    )
+
+
+choose_background_image(force=True)
 
 ui.add_head_html(
     """
 <style>
     body {
-        background-image: url('/static/background.jpg');
+        background-image: url('/background/current');
         background-size: cover;
         background-position: center;
         margin: 0;
@@ -96,6 +163,15 @@ ui.add_head_html(
         word-break: break-word;
     }
 </style>
+<script>
+    window.addEventListener('load', () => {
+        const setBackground = () => {
+            document.body.style.backgroundImage = `url('/background/current?ts=${Date.now()}')`;
+        };
+        setBackground();
+        window.setInterval(setBackground, 24 * 60 * 60 * 1000);
+    });
+</script>
 """,
     shared=True,
 )
@@ -538,6 +614,7 @@ def main_page() -> None:
 
 
 if __name__ == "__main__":
+    schedule_background_rotation()
     cleanup_downloads()
     ui.run(
         reload=bool(CONFIG["server"]["reload"]),

@@ -18,7 +18,8 @@ downloads/
 *.m4a
 *.jpg
 *.webp
-!static/background.jpg
+!background/**
+
 
 .pytest_cache/
 .mypy_cache/
