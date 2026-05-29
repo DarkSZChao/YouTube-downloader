@@ -52,14 +52,14 @@ After that, normal commits will update the badge value, for example `version: 20
 The app is exposed on port `4655` by default. Override the host port with:
 
 ```bash
-APP_PORT=8080 docker compose up -d --build
+APP_PORT=18080 docker compose up -d --build
 ```
 
 When running in Docker, the service port is controlled by `APP_PORT`, not by the config page. To change the exposed port after the container has already been created, recreate it:
 
 ```bash
 docker compose down
-APP_PORT=8080 docker compose up -d --build
+APP_PORT=18080 docker compose up -d --build
 ```
 
 Downloaded temporary files are stored in `./downloads` and are cleaned automatically according to `config.yaml`.

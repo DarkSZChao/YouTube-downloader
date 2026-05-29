@@ -56,14 +56,14 @@ hooksPath = .githooks
 应用默认暴露在 `4655` 端口。可以用下面的方式覆盖宿主机端口：
 
 ```bash
-APP_PORT=8080 docker compose up -d --build
+APP_PORT=18080 docker compose up -d --build
 ```
 
 Docker 运行时，服务端口由 `APP_PORT` 控制，而不是配置页面。容器已创建后如果要修改暴露端口，需要重新创建容器：
 
 ```bash
 docker compose down
-APP_PORT=8080 docker compose up -d --build
+APP_PORT=18080 docker compose up -d --build
 ```
 
 临时下载文件会保存在 `./downloads`，并按照 `config.yaml` 中的设置自动清理。
