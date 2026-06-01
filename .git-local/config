@@ -1,0 +1,4 @@
+[core]
+	# Keep Git path matching case-sensitive inside this repository.
+	# This is important on Windows/macOS when files differ only by case.
+	ignorecase = false
