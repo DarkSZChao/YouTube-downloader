@@ -9,6 +9,7 @@ venv/
 env/
 .env
 .env.*
+!.env
 
 downloads/
 *.mp3

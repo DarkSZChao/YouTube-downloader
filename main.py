@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.responses import FileResponse, Response
 from nicegui import app, run, ui
 
-from config import load_config, load_config_file, save_config_file
+from config import load_config, load_config_file, runtime_port, save_config_file
 from downloader import (
     MediaInfo,
     download_youtube_as_mp3,
@@ -424,8 +424,8 @@ def render_audio_format_options(audio_formats) -> None:
 @ui.page("/config")
 def config_page() -> None:
     current_config = load_config_file()
-    app_port = os.getenv("APP_PORT")
-    effective_port = int(app_port) if app_port else int(current_config["server"]["port"])
+    port = runtime_port()
+    effective_port = port or int(current_config["server"]["port"])
 
     with ui.element("main").classes("page"):
         with ui.card().classes("panel"):
@@ -437,10 +437,10 @@ def config_page() -> None:
                 ui.label("Server").classes("text-h6").style("margin-top: 8px;")
                 server_host = ui.input("Host", value=str(current_config["server"]["host"])).classes("url-input")
                 server_port = ui.number("Port", value=effective_port, min=1, max=65535).classes("url-input")
-                if app_port:
+                if port:
                     server_port.disable()
                     ui.label(
-                        "Port is controlled by APP_PORT in Docker. Change APP_PORT and recreate the container to expose a different port."
+                        "Port is controlled by PORT in the project .env file. Change it and recreate the service."
                     ).style("color: #555; margin-top: -8px;")
                 server_reload = ui.checkbox("Reload while developing", value=bool(current_config["server"]["reload"]))
 
@@ -481,7 +481,7 @@ def config_page() -> None:
                     new_config = {
                         "server": {
                             "host": (server_host.value or "").strip() or "0.0.0.0",
-                            "port": int(current_config["server"]["port"]) if app_port else to_positive_int(server_port.value, "Port"),
+                            "port": int(current_config["server"]["port"]) if port else to_positive_int(server_port.value, "Port"),
                             "reload": bool(server_reload.value),
                         },
                         "downloads": {

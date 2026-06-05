@@ -10,6 +10,7 @@ import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
+ENV_PATH = BASE_DIR / ".env"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "server": {
@@ -29,6 +30,24 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+def runtime_port() -> int | None:
+    port = os.getenv("PORT") or _env_file_value("PORT")
+    if not port:
+        return None
+    return int(port)
+
+
+def _env_file_value(name: str) -> str | None:
+    if not ENV_PATH.exists():
+        return None
+
+    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == name:
+            return value.strip().strip("'\"")
+    return None
+
+
 def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(defaults)
     for key, value in overrides.items():
@@ -41,9 +60,9 @@ def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 
 def load_config() -> dict[str, Any]:
     config = load_config_file()
-    app_port = os.getenv("APP_PORT")
-    if app_port:
-        config["server"]["port"] = int(app_port)
+    port = runtime_port()
+    if port:
+        config["server"]["port"] = port
 
     download_dir = Path(config["downloads"]["directory"])
     if not download_dir.is_absolute():

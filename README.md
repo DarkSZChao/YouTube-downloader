@@ -49,17 +49,17 @@ If you need the version number to update automatically, add `hooksPath = .githoo
 
 After that, normal commits will update the badge value, for example `version: 2026-05-29 18:44`.
 
-The app is exposed on port `4655` by default. Override the host port with:
+The app is exposed on port `4655` by default. Change the single project port in `.env`:
 
-```bash
-APP_PORT=18080 docker compose up -d --build
+```env
+PORT=18080
 ```
 
-When running in Docker, the service port is controlled by `APP_PORT`, not by the config page. To change the exposed port after the container has already been created, recreate it:
+When running in Docker, the service port is controlled by `PORT` in `.env`, not by the config page. After changing `.env`, recreate the container:
 
 ```bash
 docker compose down
-APP_PORT=18080 docker compose up -d --build
+docker compose up -d --build
 ```
 
 Downloaded temporary files are stored in `./downloads` and are cleaned automatically according to `config.yaml`.
