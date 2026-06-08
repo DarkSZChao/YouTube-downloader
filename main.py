@@ -7,11 +7,12 @@ import shutil
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.responses import FileResponse, Response
-from nicegui import app, run, ui
+from nicegui import app, ui
 
 from config import load_config, load_config_file, runtime_port, save_config_file
 from downloader import (
@@ -281,7 +282,12 @@ def update_download_button_state() -> None:
 
 
 def set_status(message: str, color: str = "green") -> None:
-    status_label.style(f"color: {color}; margin-top: 10px").set_text(message)
+    status_label.style(f"color: {color}; margin-top: 10px; white-space: pre-wrap; word-break: break-word;").set_text(message)
+
+
+def debug_exception_message(context: str, exc: Exception) -> str:
+    traceback_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
+    return f"{context} failed with {type(exc).__name__}: {exc}\n\n{traceback_text}"
 
 
 def user_error_message(exc: Exception) -> str:
@@ -569,7 +575,7 @@ async def preview_url() -> None:
     clear_tracks()
     set_status("Reading YouTube information...", "#c56a00")
     try:
-        current_media = await run.cpu_bound(
+        current_media = await asyncio.to_thread(
             inspect_youtube_url,
             url,
             int(CONFIG["downloads"]["playlist_preview_limit"]),
@@ -584,8 +590,10 @@ async def preview_url() -> None:
         selected_entry_url = ""
         selected_entry_urls = []
         clear_audio_options()
-        set_status(user_error_message(exc), "red")
-        ui.notify("Unable to read this YouTube URL.", type="negative")
+        detailed_error = debug_exception_message("preview_url", exc)
+        print(detailed_error)
+        set_status(detailed_error, "red")
+        ui.notify("Unable to read this YouTube URL. Check the server log and the red error block.", type="negative")
     finally:
         set_busy(False)
 
@@ -615,7 +623,7 @@ async def handle_playlist_selection_change(event) -> None:
     set_playlist_selection_busy(True)
     set_status("Reading selected track audio quality...", "#c56a00")
     try:
-        audio_formats = await run.cpu_bound(
+        audio_formats = await asyncio.to_thread(
             inspect_youtube_audio_formats,
             selected_entry_url,
             CONFIG["youtube"].get("user_agent"),
@@ -628,8 +636,10 @@ async def handle_playlist_selection_change(event) -> None:
         if request_id != playlist_quality_request_id:
             return
         clear_audio_options()
-        set_status(user_error_message(exc), "red")
-        ui.notify("Unable to read this track's audio quality.", type="negative")
+        detailed_error = debug_exception_message("handle_playlist_selection_change", exc)
+        print(detailed_error)
+        set_status(detailed_error, "red")
+        ui.notify("Unable to read this track's audio quality. Check the server log and the red error block.", type="negative")
     finally:
         if request_id == playlist_quality_request_id:
             set_playlist_selection_busy(False)
@@ -711,7 +721,7 @@ async def download_url() -> None:
 
     try:
         if current_media.is_playlist and len(selected_urls) > 1:
-            zip_file = await run.cpu_bound(
+            zip_file = await asyncio.to_thread(
                 download_youtube_selection_as_zip,
                 selected_urls,
                 str(DOWNLOAD_DIR),
@@ -722,7 +732,7 @@ async def download_url() -> None:
             set_status("ZIP is ready. Browser download started.", "green")
             return
 
-        files = await run.cpu_bound(
+        files = await asyncio.to_thread(
             download_youtube_as_mp3,
             selected_urls[0],
             str(DOWNLOAD_DIR),
@@ -734,8 +744,10 @@ async def download_url() -> None:
         ui.download(files[0])
         set_status("MP3 is ready. Browser download started.", "green")
     except Exception as exc:
-        set_status(f"Download failed: {exc}", "red")
-        ui.notify("Download failed. Check the URL or server logs.", type="negative")
+        detailed_error = debug_exception_message("download_url", exc)
+        print(detailed_error)
+        set_status(detailed_error, "red")
+        ui.notify("Download failed. Check the server log and the red error block.", type="negative")
     finally:
         set_busy(False)
 
