@@ -471,6 +471,7 @@ def config_page() -> None:
                 ui.label("YouTube").classes("text-h6").style("margin-top: 8px;")
                 user_agent = ui.textarea("User agent", value=str(current_config["youtube"]["user_agent"])).classes("url-input")
                 user_agent.props("autogrow")
+                cookies_file = ui.input("Cookies file", value=str(current_config["youtube"].get("cookies_file") or "")).classes("url-input")
 
             status = ui.label("").style("color: #555; margin-top: 10px")
 
@@ -498,6 +499,7 @@ def config_page() -> None:
                         },
                         "youtube": {
                             "user_agent": (user_agent.value or "").strip(),
+                            "cookies_file": (cookies_file.value or "").strip(),
                         },
                     }
                     if new_config["server"]["port"] > 65535:
@@ -580,6 +582,7 @@ async def preview_url() -> None:
             url,
             int(CONFIG["downloads"]["playlist_preview_limit"]),
             CONFIG["youtube"].get("user_agent"),
+            CONFIG["youtube"].get("cookies_file"),
         )
         current_url = url
         render_media_info(current_media)
@@ -627,6 +630,7 @@ async def handle_playlist_selection_change(event) -> None:
             inspect_youtube_audio_formats,
             selected_entry_url,
             CONFIG["youtube"].get("user_agent"),
+            CONFIG["youtube"].get("cookies_file"),
         )
         if request_id != playlist_quality_request_id or len(selected_entry_urls) != 1 or selected_entry_url != selected_entry_urls[0]:
             return
@@ -726,6 +730,7 @@ async def download_url() -> None:
                 selected_urls,
                 str(DOWNLOAD_DIR),
                 CONFIG["youtube"].get("user_agent"),
+                CONFIG["youtube"].get("cookies_file"),
             )
             await asyncio.sleep(0.5)
             ui.download(zip_file)
@@ -739,6 +744,7 @@ async def download_url() -> None:
             source_quality_select.value,
             str(mp3_quality_select.value or matched_mp3_quality(selected_source_bitrate())),
             CONFIG["youtube"].get("user_agent"),
+            CONFIG["youtube"].get("cookies_file"),
         )
         await asyncio.sleep(0.5)
         ui.download(files[0])

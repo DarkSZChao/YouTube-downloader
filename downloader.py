@@ -72,13 +72,15 @@ class CapturingLogger:
         self.messages.append(message)
 
 
-def _base_ydl_options(user_agent: str | None = None) -> dict[str, Any]:
+def _base_ydl_options(user_agent: str | None = None, cookies_file: str | None = None) -> dict[str, Any]:
     options: dict[str, Any] = {
         "quiet": True,
         "no_warnings": False,
     }
     if user_agent:
         options["http_headers"] = {"User-Agent": user_agent}
+    if cookies_file:
+        options["cookiefile"] = cookies_file
     return options
 
 
@@ -210,12 +212,17 @@ def _unique_zip_name(zip_file: zipfile.ZipFile, filename: str) -> str:
     return candidate
 
 
-def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: str | None, logger: CapturingLogger) -> list[AudioFormat]:
+def _extract_playlist_audio_formats(
+    entries: list[dict[str, Any]],
+    user_agent: str | None,
+    cookies_file: str | None,
+    logger: CapturingLogger,
+) -> list[AudioFormat]:
     first_entry_url = normalize_youtube_url(entries[0].get("url") or entries[0].get("webpage_url"))
     if not first_entry_url:
         return []
 
-    detail_options = _base_ydl_options(user_agent)
+    detail_options = _base_ydl_options(user_agent, cookies_file)
     detail_options["logger"] = logger
     try:
         with YoutubeDL(detail_options) as detail_ydl:
@@ -228,9 +235,10 @@ def _extract_playlist_audio_formats(entries: list[dict[str, Any]], user_agent: s
 def inspect_youtube_audio_formats(
     url: str,
     user_agent: str | None = None,
+    cookies_file: str | None = None,
 ) -> list[AudioFormat]:
     logger = CapturingLogger()
-    options = _base_ydl_options(user_agent)
+    options = _base_ydl_options(user_agent, cookies_file)
     options["logger"] = logger
 
     try:
@@ -248,9 +256,10 @@ def inspect_youtube_url(
     url: str,
     preview_limit: int = 50,
     user_agent: str | None = None,
+    cookies_file: str | None = None,
 ) -> MediaInfo:
     logger = CapturingLogger()
-    options = _base_ydl_options(user_agent)
+    options = _base_ydl_options(user_agent, cookies_file)
     options["extract_flat"] = "in_playlist"
     options["logger"] = logger
 
@@ -278,7 +287,7 @@ def inspect_youtube_url(
             is_playlist=True,
             entries=media_entries,
             total_count=info.get("playlist_count") or len(entries),
-            audio_formats=_extract_playlist_audio_formats(entries, user_agent, logger),
+            audio_formats=_extract_playlist_audio_formats(entries, user_agent, cookies_file, logger),
             truncated=len(entries) > preview_limit,
         )
 
@@ -297,11 +306,12 @@ def download_youtube_as_mp3(
     source_format_id: str | None = None,
     mp3_quality: str = "192",
     user_agent: str | None = None,
+    cookies_file: str | None = None,
 ) -> list[str]:
     job_dir = Path(output_folder) / uuid.uuid4().hex
     job_dir.mkdir(parents=True, exist_ok=True)
     try:
-        return _download_youtube_as_mp3_to_dir(url, job_dir, source_format_id, mp3_quality, user_agent)
+        return _download_youtube_as_mp3_to_dir(url, job_dir, source_format_id, mp3_quality, user_agent, cookies_file)
     except Exception:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise
@@ -313,11 +323,12 @@ def _download_youtube_as_mp3_to_dir(
     source_format_id: str | None = None,
     mp3_quality: str = "192",
     user_agent: str | None = None,
+    cookies_file: str | None = None,
 ) -> list[str]:
     logger = CapturingLogger()
     before_files = {path.resolve() for path in job_dir.glob("*.mp3")}
 
-    options = _base_ydl_options(user_agent)
+    options = _base_ydl_options(user_agent, cookies_file)
     options["logger"] = logger
     options.update(
         {
@@ -353,6 +364,7 @@ def download_youtube_selection_as_zip(
     urls: list[str],
     output_folder: str,
     user_agent: str | None = None,
+    cookies_file: str | None = None,
 ) -> str:
     if not urls:
         raise RuntimeError("No playlist tracks were selected.")
@@ -364,7 +376,7 @@ def download_youtube_selection_as_zip(
 
     try:
         for url in urls:
-            audio_formats = inspect_youtube_audio_formats(url, user_agent)
+            audio_formats = inspect_youtube_audio_formats(url, user_agent, cookies_file)
             best_format = audio_formats[0] if audio_formats else None
             source_format_id = best_format.format_id if best_format else None
             mp3_quality = "192"
@@ -376,7 +388,7 @@ def download_youtube_selection_as_zip(
                 else:
                     mp3_quality = "320"
             downloaded_files.extend(
-                _download_youtube_as_mp3_to_dir(url, batch_dir, source_format_id, mp3_quality, user_agent)
+                _download_youtube_as_mp3_to_dir(url, batch_dir, source_format_id, mp3_quality, user_agent, cookies_file)
             )
 
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
