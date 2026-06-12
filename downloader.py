@@ -74,6 +74,7 @@ class CapturingLogger:
 
 def _base_ydl_options(user_agent: str | None = None, cookies_file: str | None = None) -> dict[str, Any]:
     options: dict[str, Any] = {
+        "format": "bestaudio/best",
         "quiet": True,
         "no_warnings": False,
     }
