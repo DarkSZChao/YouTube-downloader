@@ -32,10 +32,10 @@ downloads:
 
 youtube:
   user_agent: Mozilla/5.0
-  cookies_file: youtube-cookies.txt
+  cookies_env: COOKIES_ENV
 ```
 
-`youtube.cookies_file` 是可选项，填写从能正常访问 YouTube 的浏览器导出的 Netscape 格式 cookies 文件路径。
+`youtube.cookies_env` 填写保存 Netscape 格式 cookies 的环境变量名称。程序会先不带 cookies 请求，失败后才读取该环境变量并使用 cookies 重试。
 
 ## Docker 部署
 
@@ -78,22 +78,12 @@ docker compose up -d --build
 
 Render 的共享出口 IP 可能被 YouTube 提示 `Sign in to confirm you're not a bot`。出现这个错误时，yt-dlp 需要浏览器 cookies。
 
-先把 YouTube cookies 导出为 Netscape 格式，然后在 Render 添加下面任意一个环境变量：
+先把 YouTube cookies 导出为 Netscape 格式，然后在 Render 添加下面的环境变量：
 
 ```env
-YOUTUBE_COOKIES_TEXT=<完整 cookies.txt 内容>
+COOKIES_ENV=<完整 cookies.txt 内容>
 ```
 
-如果 Render 的环境变量编辑器不方便填写多行内容，可以把整个 cookies 文件做 base64 编码，然后使用：
-
-```env
-YOUTUBE_COOKIES_BASE64=<base64 编码后的 cookies.txt 内容>
-```
-
-如果你自己创建或挂载了 cookies 文件，也可以直接指定路径：
-
-```env
-YOUTUBE_COOKIES_FILE=/path/to/youtube-cookies.txt
-```
+设置页里的 `Cookies` 输入框填写的是环境变量名称，不是 cookies 内容，默认值是 `COOKIES_ENV`。如果修改这个名称，Render 中的环境变量名称也要保持一致。
 
 修改环境变量后，需要重新部署 Render 服务。

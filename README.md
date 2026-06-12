@@ -32,10 +32,10 @@ downloads:
 
 youtube:
   user_agent: Mozilla/5.0
-  cookies_file: youtube-cookies.txt
+  cookies_env: COOKIES_ENV
 ```
 
-`youtube.cookies_file` is optional. It points to a Netscape-format cookies file exported from a browser that can access YouTube.
+`youtube.cookies_env` is the name of the environment variable containing Netscape-format cookies. Requests are attempted without cookies first and retried with these cookies only after a failure.
 
 ## Docker deployment
 
@@ -74,22 +74,12 @@ Downloaded temporary files are stored in `./downloads` and are cleaned automatic
 
 YouTube may block Render's shared outbound IPs with `Sign in to confirm you're not a bot`. When that happens, yt-dlp needs browser cookies.
 
-Export YouTube cookies in Netscape format, then configure one of these Render environment variables:
+Export YouTube cookies in Netscape format, then add this Render environment variable:
 
 ```env
-YOUTUBE_COOKIES_TEXT=<full cookies.txt content>
+COOKIES_ENV=<full cookies.txt content>
 ```
 
-If Render's editor has trouble with multiline values, base64-encode the whole cookies file and use:
-
-```env
-YOUTUBE_COOKIES_BASE64=<base64 encoded cookies.txt content>
-```
-
-You can also mount or create a file yourself and point to it:
-
-```env
-YOUTUBE_COOKIES_FILE=/path/to/youtube-cookies.txt
-```
+The Settings page's `Cookies` field contains the environment variable name, not the cookie text. Its default is `COOKIES_ENV`. Change both names if you want to use a different environment variable.
 
 After changing environment variables, redeploy the Render service.

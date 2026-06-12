@@ -72,7 +72,7 @@ class CapturingLogger:
         self.messages.append(message)
 
 
-def _base_ydl_options(user_agent: str | None = None, cookies_file: str | None = None) -> dict[str, Any]:
+def _base_ydl_options(user_agent: str | None = None) -> dict[str, Any]:
     options: dict[str, Any] = {
         "format": "bestaudio/best",
         "quiet": True,
@@ -80,9 +80,33 @@ def _base_ydl_options(user_agent: str | None = None, cookies_file: str | None = 
     }
     if user_agent:
         options["http_headers"] = {"User-Agent": user_agent}
-    if cookies_file:
-        options["cookiefile"] = cookies_file
     return options
+
+
+def _extract_info_with_cookie_fallback(
+    url: str,
+    options: dict[str, Any],
+    cookies_file: str | None,
+    download: bool,
+) -> dict[str, Any] | None:
+    no_cookie_error_message = ""
+    try:
+        with YoutubeDL(dict(options)) as ydl:
+            return ydl.extract_info(url, download=download)
+    except DownloadError as no_cookie_error:
+        if not cookies_file:
+            raise
+        no_cookie_error_message = str(no_cookie_error)
+
+    cookie_options = dict(options)
+    cookie_options["cookiefile"] = cookies_file
+    try:
+        with YoutubeDL(cookie_options) as ydl:
+            return ydl.extract_info(url, download=download)
+    except DownloadError as cookie_error:
+        raise DownloadError(
+            f"{cookie_error}\nInitial attempt without cookies also failed: {no_cookie_error_message}"
+        ) from cookie_error
 
 
 def _format_download_error(exc: Exception, log_messages: list[str] | None = None) -> str:
@@ -95,7 +119,7 @@ def _format_download_error(exc: Exception, log_messages: list[str] | None = None
         return "Cannot connect to YouTube from this machine. Check that the Python process can access YouTube."
     if "Unsupported URL" in message:
         return "Unsupported URL. Please enter a valid YouTube link."
-    if "\n" in clean_message or "Traceback" in clean_message:
+    if "Traceback" in clean_message:
         return "Unable to read this YouTube URL. Please check the link and try again."
     return clean_message or "Unable to read this YouTube URL."
 
@@ -223,11 +247,15 @@ def _extract_playlist_audio_formats(
     if not first_entry_url:
         return []
 
-    detail_options = _base_ydl_options(user_agent, cookies_file)
+    detail_options = _base_ydl_options(user_agent)
     detail_options["logger"] = logger
     try:
-        with YoutubeDL(detail_options) as detail_ydl:
-            first_entry_info = detail_ydl.extract_info(first_entry_url, download=False)
+        first_entry_info = _extract_info_with_cookie_fallback(
+            first_entry_url,
+            detail_options,
+            cookies_file,
+            download=False,
+        )
     except DownloadError:
         return []
     return _audio_formats_from_info(first_entry_info or {})
@@ -239,12 +267,11 @@ def inspect_youtube_audio_formats(
     cookies_file: str | None = None,
 ) -> list[AudioFormat]:
     logger = CapturingLogger()
-    options = _base_ydl_options(user_agent, cookies_file)
+    options = _base_ydl_options(user_agent)
     options["logger"] = logger
 
     try:
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = _extract_info_with_cookie_fallback(url, options, cookies_file, download=False)
     except DownloadError as exc:
         raise ValueError(_format_download_error(exc, logger.messages)) from exc
 
@@ -260,13 +287,12 @@ def inspect_youtube_url(
     cookies_file: str | None = None,
 ) -> MediaInfo:
     logger = CapturingLogger()
-    options = _base_ydl_options(user_agent, cookies_file)
+    options = _base_ydl_options(user_agent)
     options["extract_flat"] = "in_playlist"
     options["logger"] = logger
 
     try:
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = _extract_info_with_cookie_fallback(url, options, cookies_file, download=False)
     except DownloadError as exc:
         raise ValueError(_format_download_error(exc, logger.messages)) from exc
 
@@ -329,7 +355,7 @@ def _download_youtube_as_mp3_to_dir(
     logger = CapturingLogger()
     before_files = {path.resolve() for path in job_dir.glob("*.mp3")}
 
-    options = _base_ydl_options(user_agent, cookies_file)
+    options = _base_ydl_options(user_agent)
     options["logger"] = logger
     options.update(
         {
@@ -350,8 +376,7 @@ def _download_youtube_as_mp3_to_dir(
 
     info = None
     try:
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
+        info = _extract_info_with_cookie_fallback(url, options, cookies_file, download=True)
     except DownloadError as exc:
         raise RuntimeError(_format_download_error(exc, logger.messages)) from exc
 

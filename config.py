@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import tempfile
 from copy import deepcopy
@@ -28,7 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "youtube": {
         "user_agent": "Mozilla/5.0",
-        "cookies_file": "",
+        "cookies_env": "COOKIES_ENV",
     },
 }
 
@@ -55,12 +54,8 @@ def _env_file_value(name: str) -> str | None:
     return None
 
 
-def _cookies_file_from_env() -> str:
-    cookies_text = _env_value("YOUTUBE_COOKIES_TEXT")
-    cookies_base64 = _env_value("YOUTUBE_COOKIES_BASE64")
-    if not cookies_text and cookies_base64:
-        cookies_text = base64.b64decode(cookies_base64).decode("utf-8")
-
+def _cookies_file_from_env(env_name: str) -> str:
+    cookies_text = _env_value(env_name)
     if not cookies_text:
         return ""
 
@@ -93,14 +88,9 @@ def load_config() -> dict[str, Any]:
         download_dir = BASE_DIR / download_dir
     config["downloads"]["directory"] = str(download_dir)
 
-    cookies_file = _env_value("YOUTUBE_COOKIES_FILE") or _cookies_file_from_env() or str(config["youtube"].get("cookies_file") or "")
-    if cookies_file:
-        cookies_path = Path(cookies_file)
-        if not cookies_path.is_absolute():
-            cookies_path = BASE_DIR / cookies_path
-        config["youtube"]["cookies_file"] = str(cookies_path)
-    else:
-        config["youtube"]["cookies_file"] = ""
+    cookies_env = str(config["youtube"].get("cookies_env") or "COOKIES_ENV").strip()
+    config["youtube"]["cookies_env"] = cookies_env
+    config["youtube"]["cookies_file"] = _cookies_file_from_env(cookies_env)
 
     return config
 
