@@ -23,7 +23,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates python3 python3-pip python3-venv curl \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=pot-builder /opt/bgutil /opt/bgutil

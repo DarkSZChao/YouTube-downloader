@@ -114,8 +114,8 @@ def _extract_info_with_cookie_fallback(
         "youtube": {
             "player_client": ["mweb"],
         },
-        "youtubepot-bgutilhttp": {
-            "base_url": ["http://127.0.0.1:4416"],
+        "youtubepot-bgutilscript": {
+            "server_home": ["/opt/bgutil/server"],
         },
     }
     try:

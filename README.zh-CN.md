@@ -88,4 +88,4 @@ COOKIES_ENV=<完整 cookies.txt 内容>
 
 修改环境变量后，需要重新部署 Render 服务。
 
-Docker 镜像会同时启动本地 BgUtils PO Token Provider，并在 cookies 默认客户端失败后使用官方推荐的 `mweb` 客户端重试。Render 服务必须使用仓库中的 `Dockerfile` 部署，不能使用普通 Python Native Runtime，否则 PO Token Provider 不会启动。
+Docker 镜像包含 BgUtils PO Token Provider。程序会在 cookies 默认客户端失败后，使用官方推荐的 `mweb` 客户端和按需 Node 脚本生成 Token。Render 服务必须使用仓库中的 `Dockerfile` 部署，不能使用普通 Python Native Runtime。
