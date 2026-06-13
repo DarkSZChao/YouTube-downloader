@@ -80,6 +80,12 @@ def _base_ydl_options(user_agent: str | None = None) -> dict[str, Any]:
         "quiet": True,
         "no_warnings": False,
     }
+    if node_path := shutil.which("node"):
+        options["js_runtimes"] = {
+            "node": {
+                "path": node_path,
+            },
+        }
     if user_agent:
         options["http_headers"] = {"User-Agent": user_agent}
     return options
