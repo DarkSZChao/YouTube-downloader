@@ -87,3 +87,5 @@ COOKIES_ENV=<完整 cookies.txt 内容>
 设置页里的 `Cookies` 输入框填写的是环境变量名称，不是 cookies 内容，默认值是 `COOKIES_ENV`。如果修改这个名称，Render 中的环境变量名称也要保持一致。
 
 修改环境变量后，需要重新部署 Render 服务。
+
+Docker 镜像会同时启动本地 BgUtils PO Token Provider，并在 cookies 默认客户端失败后使用官方推荐的 `mweb` 客户端重试。Render 服务必须使用仓库中的 `Dockerfile` 部署，不能使用普通 Python Native Runtime，否则 PO Token Provider 不会启动。

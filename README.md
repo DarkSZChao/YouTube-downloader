@@ -83,3 +83,5 @@ COOKIES_ENV=<full cookies.txt content>
 The Settings page's `Cookies` field contains the environment variable name, not the cookie text. Its default is `COOKIES_ENV`. Change both names if you want to use a different environment variable.
 
 After changing environment variables, redeploy the Render service.
+
+The Docker image starts a local BgUtils PO Token Provider and retries with the recommended `mweb` client after the cookie request using the default client fails. The Render service must deploy using this repository's `Dockerfile`; a Python Native Runtime will not start the token provider.

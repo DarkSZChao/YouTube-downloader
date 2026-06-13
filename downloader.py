@@ -106,21 +106,21 @@ def _extract_info_with_cookie_fallback(
     except DownloadError as cookie_error:
         cookie_error_message = str(cookie_error)
 
-    safari_options = dict(cookie_options)
-    safari_options["extractor_args"] = {
+    pot_options = dict(cookie_options)
+    pot_options["extractor_args"] = {
         "youtube": {
-            "player_client": ["web_safari"],
+            "player_client": ["mweb"],
         },
     }
     try:
-        with YoutubeDL(safari_options) as ydl:
+        with YoutubeDL(pot_options) as ydl:
             return ydl.extract_info(url, download=download)
-    except DownloadError as safari_error:
+    except DownloadError as pot_error:
         raise DownloadError(
-            f"{safari_error}\n"
+            f"{pot_error}\n"
             f"Cookie attempt with the default YouTube client also failed: {cookie_error_message}\n"
             f"Initial attempt without cookies also failed: {no_cookie_error_message}"
-        ) from safari_error
+        ) from pot_error
 
 
 def _format_download_error(exc: Exception, log_messages: list[str] | None = None) -> str:
