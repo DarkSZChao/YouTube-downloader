@@ -11,4 +11,4 @@ echo "BgUtils script provider is available at /opt/bgutil/server"
         || echo "WARNING: yt-dlp did not report Node/EJS or a BgUtils PO Token provider"
 ) &
 
-exec python main.py
+exec python -m app

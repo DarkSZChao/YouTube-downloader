@@ -9,9 +9,10 @@ venv/
 env/
 .env
 .env.*
-!.env
+!.env.example
 
 downloads/
+assets/downloads/
 *.mp3
 *.zip
 *.part
@@ -19,7 +20,7 @@ downloads/
 *.m4a
 *.jpg
 *.webp
-!background/**
+!assets/background/**
 
 
 .pytest_cache/

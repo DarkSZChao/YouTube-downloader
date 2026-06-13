@@ -1,21 +1,24 @@
 from __future__ import annotations
 
+import sys
 import asyncio
 import os
 import random
 import shutil
-import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from fastapi.responses import FileResponse, Response
 from nicegui import app, ui
 
-from config import load_config, load_config_file, runtime_port, save_config_file
-from downloader import (
+from app.config import load_config, load_config_file, save_config_file
+from app.downloader import (
     MediaInfo,
     download_youtube_as_mp3,
     download_youtube_selection_as_zip,
@@ -27,12 +30,14 @@ from downloader import (
 CONFIG = load_config()
 DOWNLOAD_DIR = Path(CONFIG["downloads"]["directory"])
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-VERSION_PATH = Path(__file__).resolve().parent / "VERSION"
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+VERSION_PATH = PROJECT_DIR / "VERSION"
 APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "unknown"
 MP3_QUALITY_CHOICES = (64, 96, 128, 160, 192, 256, 320)
-BACKGROUND_DIR = Path("background")
+BACKGROUND_DIR = PROJECT_DIR / "assets" / "background"
 BACKGROUND_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 BACKGROUND_ROTATION_SECONDS = 24 * 60 * 60
+INTERNAL_PORT = 8000
 current_background_path: Path | None = None
 current_background_started_at = 0.0
 
@@ -430,8 +435,6 @@ def render_audio_format_options(audio_formats) -> None:
 @ui.page("/config")
 def config_page() -> None:
     current_config = load_config_file()
-    port = runtime_port()
-    effective_port = port or int(current_config["server"]["port"])
 
     with ui.element("main").classes("page"):
         with ui.card().classes("panel"):
@@ -442,12 +445,16 @@ def config_page() -> None:
             with ui.element("div").classes("form-grid"):
                 ui.label("Server").classes("text-h6").style("margin-top: 8px;")
                 server_host = ui.input("Host", value=str(current_config["server"]["host"])).classes("url-input")
-                server_port = ui.number("Port", value=effective_port, min=1, max=65535).classes("url-input")
-                if port:
-                    server_port.disable()
-                    ui.label(
-                        "Port is controlled by PORT in the project .env file. Change it and recreate the service."
-                    ).style("color: #555; margin-top: -8px;")
+                external_port = ui.number(
+                    "Docker external port",
+                    value=int(current_config["server"]["external_port"]),
+                    min=1,
+                    max=65535,
+                ).classes("url-input")
+                ui.label(
+                    f"The app always listens on port {INTERNAL_PORT}. Recreate the Docker service after changing "
+                    "the external port."
+                ).style("color: #555; margin-top: -8px;")
                 server_reload = ui.checkbox("Reload while developing", value=bool(current_config["server"]["reload"]))
 
                 ui.label("Downloads").classes("text-h6").style("margin-top: 8px;")
@@ -481,7 +488,10 @@ def config_page() -> None:
             restart_dialog = ui.dialog()
             with restart_dialog, ui.card().style("width: 420px; max-width: calc(100vw - 32px);"):
                 ui.label("Configuration saved").classes("text-h6")
-                ui.label("Restart the service now so the main page uses the new settings?")
+                ui.label(
+                    "Restart the app now to apply runtime settings? Docker external port changes require "
+                    "recreating the container."
+                )
                 with ui.row().classes("justify-end").style("width: 100%; gap: 8px;"):
                     ui.button("Later", on_click=restart_dialog.close).props("flat")
                     ui.button("Restart", icon="refresh", on_click=restart_server)
@@ -491,11 +501,11 @@ def config_page() -> None:
                     new_config = {
                         "server": {
                             "host": (server_host.value or "").strip() or "0.0.0.0",
-                            "port": int(current_config["server"]["port"]) if port else to_positive_int(server_port.value, "Port"),
+                            "external_port": to_positive_int(external_port.value, "External port"),
                             "reload": bool(server_reload.value),
                         },
                         "downloads": {
-                            "directory": (download_directory.value or "").strip() or "downloads",
+                            "directory": (download_directory.value or "").strip() or "assets/downloads",
                             "cleanup_after_minutes": to_positive_int(cleanup_after.value, "Cleanup age"),
                             "cleanup_interval_minutes": to_positive_int(cleanup_interval.value, "Cleanup interval"),
                             "playlist_preview_limit": to_positive_int(playlist_limit.value, "Playlist preview limit"),
@@ -505,15 +515,17 @@ def config_page() -> None:
                             "cookies_env": (cookies_env.value or "").strip() or "COOKIES_ENV",
                         },
                     }
-                    if new_config["server"]["port"] > 65535:
-                        raise ValueError("Port must be between 1 and 65535.")
+                    if new_config["server"]["external_port"] > 65535:
+                        raise ValueError("External port must be between 1 and 65535.")
                     save_config_file(new_config)
                 except ValueError as exc:
                     status.style("color: red; margin-top: 10px").set_text(str(exc))
                     ui.notify(str(exc), type="negative")
                     return
 
-                status.style("color: green; margin-top: 10px").set_text("Saved to config.yaml.")
+                status.style("color: green; margin-top: 10px").set_text(
+                    "Saved to config/config.yaml. The external port was also synced to .env."
+                )
                 restart_dialog.open()
 
             with ui.row().classes("items-center").style("width: 100%; gap: 12px; margin-top: 12px;"):
@@ -806,12 +818,16 @@ def main_page() -> None:
     render_version_badge()
 
 
-if __name__ == "__main__":
+def main() -> None:
     schedule_background_rotation()
     cleanup_downloads()
     ui.run(
         reload=bool(CONFIG["server"]["reload"]),
         host=str(CONFIG["server"]["host"]),
-        port=int(CONFIG["server"]["port"]),
+        port=INTERNAL_PORT,
         show=False,
     )
+
+
+if __name__ == "__main__":
+    main()

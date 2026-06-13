@@ -1,9 +1,9 @@
 server:
   host: 0.0.0.0
-  port: 4655
+  external_port: 4655
   reload: false
 downloads:
-  directory: downloads
+  directory: assets/downloads
   cleanup_after_minutes: 60
   cleanup_interval_minutes: 10
   playlist_preview_limit: 50

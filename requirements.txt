@@ -2,4 +2,5 @@ nicegui
 yt-dlp[default]>=2026.3.17
 bgutil-ytdlp-pot-provider==1.3.1
 PyYAML
+python-dotenv
 opencc-python-reimplemented

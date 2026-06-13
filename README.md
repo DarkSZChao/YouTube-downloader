@@ -2,30 +2,31 @@
 
 [中文说明](README.zh-CN.md)
 
-A small NiceGUI app that downloads a selected YouTube audio stream and saves it as MP3. Playlist URLs are detected, shown as a track list, and downloaded one selected track at a time.
+A NiceGUI app that downloads YouTube audio as MP3 and supports selecting tracks from playlists.
 
-## Local run
+## Local Run
 
 Install FFmpeg and Python dependencies, then run:
 
 ```bash
 pip install -r requirements.txt
-python main.py
+python -m app
 ```
 
-Open `http://localhost:4655`.
+The app always listens on `http://localhost:8000` when run locally.
 
 ## Configuration
 
-Open `http://localhost:4655/config` or use the Settings button on the main page. Saving writes the values to `config.yaml` and asks whether to restart the service.
+Open `/config` from the application or use the Settings button. Settings are stored in `config/config.yaml`.
 
 ```yaml
 server:
   host: 0.0.0.0
-  port: 4655
+  external_port: 4655
+  reload: false
 
 downloads:
-  directory: downloads
+  directory: assets/downloads
   cleanup_after_minutes: 60
   cleanup_interval_minutes: 15
   playlist_preview_limit: 50
@@ -35,9 +36,11 @@ youtube:
   cookies_env: COOKIES_ENV
 ```
 
-`youtube.cookies_env` is the name of the environment variable containing Netscape-format cookies. Requests are attempted without cookies first and retried with these cookies only after a failure.
+The application port is fixed at `8000`. `server.external_port` controls the Docker host port and is synchronized to `PORT` in `.env` when settings are saved.
 
-## Docker deployment
+For local runs, Netscape-format cookies can be stored in `.env`. Use `.env.example` as the template. The real `.env` contains credentials and must not be committed.
+
+## Docker Deployment
 
 Build and run:
 
@@ -45,43 +48,30 @@ Build and run:
 docker compose up -d --build
 ```
 
-The page shows the version from the committed `VERSION` file. Enable the repository Git hook once on your development machine so each commit updates and stages `VERSION` automatically:
+With the default configuration, open `http://localhost:4655`. Docker maps the configured external port to the fixed container port:
+
+```text
+external_port:8000
+```
+
+After changing the external port on the configuration page, recreate the container so Docker applies the new host mapping:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+Downloaded temporary files are stored in `assets/downloads` and cleaned according to `config/config.yaml`.
+
+## Version
+
+The page displays the value from `VERSION`. To enable the repository Git hook:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-If you need the version number to update automatically, add `hooksPath = .githooks` under the `[core]` section in `.git/config`.
+## Render and YouTube Checks
 
-After that, normal commits will update the badge value, for example `version: 2026-05-29 18:44`.
+YouTube may reject shared hosting IPs with `Sign in to confirm you're not a bot`. In that case, export Netscape-format browser cookies and configure the environment variable named by `youtube.cookies_env`.
 
-The app is exposed on port `4655` by default. Change the single project port in `.env`:
-
-```env
-PORT=18080
-```
-
-When running in Docker, the service port is controlled by `PORT` in `.env`, not by the config page. After changing `.env`, recreate the container:
-
-```bash
-docker compose down
-docker compose up -d --build
-```
-
-Downloaded temporary files are stored in `./downloads` and are cleaned automatically according to `config.yaml`.
-
-## Render and YouTube bot checks
-
-YouTube may block Render's shared outbound IPs with `Sign in to confirm you're not a bot`. When that happens, yt-dlp needs browser cookies.
-
-Export YouTube cookies in Netscape format, then add this Render environment variable:
-
-```env
-COOKIES_ENV=<full cookies.txt content>
-```
-
-The Settings page's `Cookies` field contains the environment variable name, not the cookie text. Its default is `COOKIES_ENV`. Change both names if you want to use a different environment variable.
-
-After changing environment variables, redeploy the Render service.
-
-The Docker image includes the BgUtils PO Token Provider. After the cookie request using the default client fails, the app retries with the recommended `mweb` client and generates tokens through the on-demand Node.js script. The Render service must deploy using this repository's `Dockerfile`; a Python Native Runtime will not include the provider.
+The Docker image includes the BgUtils PO Token Provider. Render must deploy this repository with its `Dockerfile`; a Python native runtime will not include that provider.

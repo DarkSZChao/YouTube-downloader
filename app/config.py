@@ -7,20 +7,22 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import dotenv_values, set_key
 
 
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
-ENV_PATH = BASE_DIR / ".env"
+PROJECT_DIR = BASE_DIR.parent
+CONFIG_PATH = PROJECT_DIR / "config" / "config.yaml"
+ENV_PATH = PROJECT_DIR / ".env"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "server": {
         "host": "0.0.0.0",
-        "port": 4655,
+        "external_port": 4655,
         "reload": False,
     },
     "downloads": {
-        "directory": "downloads",
+        "directory": "assets/downloads",
         "cleanup_after_minutes": 60,
         "cleanup_interval_minutes": 15,
         "playlist_preview_limit": 50,
@@ -32,13 +34,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
-def runtime_port() -> int | None:
-    port = _env_value("PORT")
-    if not port:
-        return None
-    return int(port)
-
-
 def _env_value(name: str) -> str | None:
     return os.getenv(name) or _env_file_value(name)
 
@@ -47,11 +42,8 @@ def _env_file_value(name: str) -> str | None:
     if not ENV_PATH.exists():
         return None
 
-    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-        key, separator, value = line.partition("=")
-        if separator and key.strip() == name:
-            return value.strip().strip("'\"")
-    return None
+    value = dotenv_values(ENV_PATH).get(name)
+    return str(value) if value is not None else None
 
 
 def _cookies_file_from_env(env_name: str) -> str:
@@ -79,13 +71,10 @@ def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 
 def load_config() -> dict[str, Any]:
     config = load_config_file()
-    port = runtime_port()
-    if port:
-        config["server"]["port"] = port
 
     download_dir = Path(config["downloads"]["directory"])
     if not download_dir.is_absolute():
-        download_dir = BASE_DIR / download_dir
+        download_dir = PROJECT_DIR / download_dir
     config["downloads"]["directory"] = str(download_dir)
 
     cookies_env = str(config["youtube"].get("cookies_env") or "COOKIES_ENV").strip()
@@ -103,7 +92,11 @@ def load_config_file() -> dict[str, Any]:
         loaded = yaml.safe_load(file) or {}
 
     if not isinstance(loaded, dict):
-        raise ValueError("config.yaml must contain a YAML mapping at the top level.")
+        raise ValueError("config/config.yaml must contain a YAML mapping at the top level.")
+
+    server = loaded.get("server")
+    if isinstance(server, dict) and "external_port" not in server and "port" in server:
+        server["external_port"] = server.pop("port")
 
     config = _merge_config(DEFAULT_CONFIG, loaded)
     return config
@@ -112,3 +105,5 @@ def load_config_file() -> dict[str, Any]:
 def save_config_file(config: dict[str, Any]) -> None:
     with CONFIG_PATH.open("w", encoding="utf-8") as file:
         yaml.safe_dump(config, file, sort_keys=False, allow_unicode=True)
+
+    set_key(ENV_PATH, "PORT", str(config["server"]["external_port"]), quote_mode="never")
