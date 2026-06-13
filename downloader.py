@@ -63,7 +63,9 @@ class CapturingLogger:
         self.messages: list[str] = []
 
     def debug(self, message: str) -> None:
-        pass
+        diagnostic_terms = ("PO Token", "provider", "player client", "Skipping client", "formats")
+        if any(term.casefold() in message.casefold() for term in diagnostic_terms):
+            self.messages.append(message)
 
     def warning(self, message: str) -> None:
         self.messages.append(message)
@@ -107,9 +109,13 @@ def _extract_info_with_cookie_fallback(
         cookie_error_message = str(cookie_error)
 
     pot_options = dict(cookie_options)
+    pot_options["verbose"] = True
     pot_options["extractor_args"] = {
         "youtube": {
             "player_client": ["mweb"],
+        },
+        "youtubepot-bgutilhttp": {
+            "base_url": ["http://127.0.0.1:4416"],
         },
     }
     try:
@@ -135,6 +141,8 @@ def _format_download_error(exc: Exception, log_messages: list[str] | None = None
         return "Unsupported URL. Please enter a valid YouTube link."
     if "Traceback" in clean_message:
         return "Unable to read this YouTube URL. Please check the link and try again."
+    if log_text:
+        return f"{clean_message or 'Unable to read this YouTube URL.'}\n\nyt-dlp diagnostics:\n{log_text}"
     return clean_message or "Unable to read this YouTube URL."
 
 
