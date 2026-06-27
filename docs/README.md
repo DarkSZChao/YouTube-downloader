@@ -1,6 +1,6 @@
 # YouTube Audio Downloader
 
-[中文说明](README.zh-CN.md)
+[涓枃璇存槑](README.zh-CN.md)
 
 A NiceGUI app that downloads YouTube audio as MP3 and supports selecting tracks from playlists.
 
@@ -20,13 +20,7 @@ The app always listens on `http://localhost:8000` when run locally.
 Open `/config` from the application or use the Settings button. Settings are stored in `config/config.yaml`.
 
 ```yaml
-server:
-  host: 0.0.0.0
-  external_port: 4655
-  reload: false
-
 downloads:
-  directory: assets/downloads
   cleanup_after_minutes: 60
   cleanup_interval_minutes: 15
   playlist_preview_limit: 50
@@ -36,7 +30,7 @@ youtube:
   cookies_env: COOKIES_ENV
 ```
 
-The application port is fixed at `8000`. `server.external_port` controls the Docker host port and is synchronized to `PORT` in `.env` when settings are saved.
+The application always listens on 0.0.0.0:8000. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
 
 For local runs, Netscape-format cookies can be stored in `.env`. Use `.env.example` as the template. The real `.env` contains credentials and must not be committed.
 
@@ -48,13 +42,13 @@ Build and run:
 docker compose up -d --build
 ```
 
-With the default configuration, open `http://localhost:4655`. Docker maps the configured external port to the fixed container port:
+Docker always exposes the application at http://localhost:4655 and maps it to the fixed container port:
 
 ```text
-external_port:8000
+4655:8000
 ```
 
-After changing the external port on the configuration page, recreate the container so Docker applies the new host mapping:
+After changing the mapping in docker-compose.yml, recreate the container:
 
 ```bash
 docker compose up -d --force-recreate

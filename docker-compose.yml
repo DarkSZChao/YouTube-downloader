@@ -4,10 +4,9 @@ services:
     container_name: youtube-downloader
     restart: unless-stopped
     ports:
-      - "${PORT:-4655}:8000"
+      - "4655:8000"
     env_file:
       - .env
     volumes:
       - ./assets/downloads:/app/assets/downloads
       - ./config/config.yaml:/app/config/config.yaml
-      - ./.env:/app/.env

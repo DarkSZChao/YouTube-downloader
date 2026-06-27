@@ -28,9 +28,9 @@ from app.downloader import (
 
 
 CONFIG = load_config()
-DOWNLOAD_DIR = Path(CONFIG["downloads"]["directory"])
-DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PROJECT_DIR = Path(__file__).resolve().parents[1]
+DOWNLOAD_DIR = PROJECT_DIR / "assets" / "downloads"
+DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 VERSION_PATH = PROJECT_DIR / "VERSION"
 APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "unknown"
 MP3_QUALITY_CHOICES = (64, 96, 128, 160, 192, 256, 320)
@@ -443,22 +443,7 @@ def config_page() -> None:
                 ui.button("Back", icon="arrow_back", on_click=lambda: ui.navigate.to("/")).props("flat")
 
             with ui.element("div").classes("form-grid"):
-                ui.label("Server").classes("text-h6").style("margin-top: 8px;")
-                server_host = ui.input("Host", value=str(current_config["server"]["host"])).classes("url-input")
-                external_port = ui.number(
-                    "Docker external port",
-                    value=int(current_config["server"]["external_port"]),
-                    min=1,
-                    max=65535,
-                ).classes("url-input")
-                ui.label(
-                    f"The app always listens on port {INTERNAL_PORT}. Recreate the Docker service after changing "
-                    "the external port."
-                ).style("color: #555; margin-top: -8px;")
-                server_reload = ui.checkbox("Reload while developing", value=bool(current_config["server"]["reload"]))
-
                 ui.label("Downloads").classes("text-h6").style("margin-top: 8px;")
-                download_directory = ui.input("Download directory", value=str(current_config["downloads"]["directory"])).classes("url-input")
                 cleanup_after = ui.number(
                     "Cleanup files older than minutes",
                     value=int(current_config["downloads"]["cleanup_after_minutes"]),
@@ -488,10 +473,7 @@ def config_page() -> None:
             restart_dialog = ui.dialog()
             with restart_dialog, ui.card().style("width: 420px; max-width: calc(100vw - 32px);"):
                 ui.label("Configuration saved").classes("text-h6")
-                ui.label(
-                    "Restart the app now to apply runtime settings? Docker external port changes require "
-                    "recreating the container."
-                )
+                ui.label("Restart the app now to apply the new settings?")
                 with ui.row().classes("justify-end").style("width: 100%; gap: 8px;"):
                     ui.button("Later", on_click=restart_dialog.close).props("flat")
                     ui.button("Restart", icon="refresh", on_click=restart_server)
@@ -499,13 +481,7 @@ def config_page() -> None:
             def save_settings() -> None:
                 try:
                     new_config = {
-                        "server": {
-                            "host": (server_host.value or "").strip() or "0.0.0.0",
-                            "external_port": to_positive_int(external_port.value, "External port"),
-                            "reload": bool(server_reload.value),
-                        },
                         "downloads": {
-                            "directory": (download_directory.value or "").strip() or "assets/downloads",
                             "cleanup_after_minutes": to_positive_int(cleanup_after.value, "Cleanup age"),
                             "cleanup_interval_minutes": to_positive_int(cleanup_interval.value, "Cleanup interval"),
                             "playlist_preview_limit": to_positive_int(playlist_limit.value, "Playlist preview limit"),
@@ -515,17 +491,13 @@ def config_page() -> None:
                             "cookies_env": (cookies_env.value or "").strip() or "COOKIES_ENV",
                         },
                     }
-                    if new_config["server"]["external_port"] > 65535:
-                        raise ValueError("External port must be between 1 and 65535.")
                     save_config_file(new_config)
                 except ValueError as exc:
                     status.style("color: red; margin-top: 10px").set_text(str(exc))
                     ui.notify(str(exc), type="negative")
                     return
 
-                status.style("color: green; margin-top: 10px").set_text(
-                    "Saved to config/config.yaml. The external port was also synced to .env."
-                )
+                status.style("color: green; margin-top: 10px").set_text("Saved to config/config.yaml.")
                 restart_dialog.open()
 
             with ui.row().classes("items-center").style("width: 100%; gap: 12px; margin-top: 12px;"):
@@ -822,8 +794,8 @@ def main() -> None:
     schedule_background_rotation()
     cleanup_downloads()
     ui.run(
-        reload=bool(CONFIG["server"]["reload"]),
-        host=str(CONFIG["server"]["host"]),
+        reload=False,
+        host="0.0.0.0",
         port=INTERNAL_PORT,
         show=False,
     )

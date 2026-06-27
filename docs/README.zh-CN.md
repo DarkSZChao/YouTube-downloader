@@ -13,20 +13,14 @@ pip install -r requirements.txt
 python -m app
 ```
 
-本地运行时，应用始终监听 `http://localhost:8000`。
+应用始终监听 `http://localhost:8000`。
 
 ## 配置
 
 打开应用的 `/config` 页面，或者点击主页的 Settings 按钮。配置保存在 `config/config.yaml`。
 
 ```yaml
-server:
-  host: 0.0.0.0
-  external_port: 4655
-  reload: false
-
 downloads:
-  directory: assets/downloads
   cleanup_after_minutes: 60
   cleanup_interval_minutes: 15
   playlist_preview_limit: 50
@@ -36,7 +30,7 @@ youtube:
   cookies_env: COOKIES_ENV
 ```
 
-应用内部端口固定为 `8000`。`server.external_port` 表示 Docker 对外暴露的宿主机端口。通过配置页面保存后，该值会同步到 `.env` 中的 `PORT`。
+服务器地址、内部端口、Docker 端口映射和 reload 行为不由配置页面管理。应用固定监听 `0.0.0.0:8000`。
 
 本地运行时，可以把 Netscape 格式的 cookies 保存到 `.env`。请使用 `.env.example` 作为模板。真实 `.env` 含有账号凭据，不应提交到版本库。
 
@@ -48,13 +42,13 @@ youtube:
 docker compose up -d --build
 ```
 
-使用默认配置时，打开 `http://localhost:4655`。Docker 会按以下方式映射端口：
+Docker 固定通过 http://localhost:4655 暴露应用，并映射到容器内部端口：
 
 ```text
-外部端口:8000
+4655:8000
 ```
 
-在配置页面修改外部端口后，需要重新创建容器，Docker 才会应用新的宿主机端口映射：
+修改 docker-compose.yml 中的端口映射后，需要重新创建容器：
 
 ```bash
 docker compose up -d --force-recreate
