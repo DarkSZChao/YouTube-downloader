@@ -23,7 +23,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "youtube": {
         "user_agent": "Mozilla/5.0",
-        "cookies_env": "COOKIES_ENV",
     },
 }
 
@@ -40,8 +39,8 @@ def _env_file_value(name: str) -> str | None:
     return str(value) if value is not None else None
 
 
-def _cookies_file_from_env(env_name: str) -> str:
-    cookies_text = _env_value(env_name)
+def _cookies_file_from_env() -> str:
+    cookies_text = _env_value("ENV_COOKIES")
     if not cookies_text:
         return ""
 
@@ -66,9 +65,7 @@ def _merge_config(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[s
 def load_config() -> dict[str, Any]:
     config = load_config_file()
 
-    cookies_env = str(config["youtube"].get("cookies_env") or "COOKIES_ENV").strip()
-    config["youtube"]["cookies_env"] = cookies_env
-    config["youtube"]["cookies_file"] = _cookies_file_from_env(cookies_env)
+    config["youtube"]["cookies_file"] = _cookies_file_from_env()
 
     return config
 

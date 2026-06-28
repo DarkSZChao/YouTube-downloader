@@ -27,7 +27,6 @@ downloads:
 
 youtube:
   user_agent: Mozilla/5.0
-  cookies_env: COOKIES_ENV
 ```
 
 服务器地址、内部端口、Docker 端口映射和 reload 行为不由配置页面管理。应用固定监听 `0.0.0.0:8000`。
@@ -56,16 +55,8 @@ docker compose up -d --force-recreate
 
 临时下载文件保存在 `assets/downloads`，并按照 `config/config.yaml` 中的设置自动清理。
 
-## 版本号
-
-页面显示的版本号来自 `VERSION`。启用仓库 Git hook：
-
-```bash
-git config core.hooksPath .githooks
-```
-
 ## Render 和 YouTube 检测
 
-YouTube 可能会对共享托管 IP 提示 `Sign in to confirm you're not a bot`。出现这种情况时，请导出 Netscape 格式的浏览器 cookies，并配置 `youtube.cookies_env` 指定的环境变量。
+YouTube 可能会对共享托管 IP 提示需要登录确认。出现这种情况时，请导出 Netscape 格式的浏览器 cookies，并设置固定的 ENV_COOKIES 环境变量。
 
 Docker 镜像包含 BgUtils PO Token Provider。Render 必须使用仓库中的 `Dockerfile` 部署，普通 Python 运行环境不会包含该 Provider。

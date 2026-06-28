@@ -1,8 +1,7 @@
 downloads:
-  cleanup_after_minutes: 60
+  cleanup_after_minutes: 30
   cleanup_interval_minutes: 10
   playlist_preview_limit: 50
 youtube:
   user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
     like Gecko) Chrome/125.0 Safari/537.36
-  cookies_env: COOKIES_ENV

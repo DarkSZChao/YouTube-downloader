@@ -1,6 +1,6 @@
 # YouTube Audio Downloader
 
-[涓枃璇存槑](README.zh-CN.md)
+[中文点我！](README.zh-CN.md)
 
 A NiceGUI app that downloads YouTube audio as MP3 and supports selecting tracks from playlists.
 
@@ -27,7 +27,6 @@ downloads:
 
 youtube:
   user_agent: Mozilla/5.0
-  cookies_env: COOKIES_ENV
 ```
 
 The application always listens on 0.0.0.0:8000. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
@@ -56,16 +55,8 @@ docker compose up -d --force-recreate
 
 Downloaded temporary files are stored in `assets/downloads` and cleaned according to `config/config.yaml`.
 
-## Version
-
-The page displays the value from `VERSION`. To enable the repository Git hook:
-
-```bash
-git config core.hooksPath .githooks
-```
-
 ## Render and YouTube Checks
 
-YouTube may reject shared hosting IPs with `Sign in to confirm you're not a bot`. In that case, export Netscape-format browser cookies and configure the environment variable named by `youtube.cookies_env`.
+YouTube may reject shared hosting IPs with Sign in to confirm you are not a bot. In that case, export Netscape-format browser cookies and set the fixed ENV_COOKIES environment variable.
 
 The Docker image includes the BgUtils PO Token Provider. Render must deploy this repository with its `Dockerfile`; a Python native runtime will not include that provider.

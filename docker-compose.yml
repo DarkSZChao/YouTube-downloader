@@ -6,7 +6,7 @@ services:
     ports:
       - "4656:8000"
     environment:
-      COOKIES_ENV: ${COOKIES_ENV:-}
+      ENV_COOKIES: ${ENV_COOKIES:-}
     volumes:
       - ./assets/downloads:/app/assets/downloads
       - ./config/config.yaml:/app/config/config.yaml

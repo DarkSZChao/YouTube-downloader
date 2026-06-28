@@ -463,10 +463,6 @@ def config_page() -> None:
                 ui.label("YouTube").classes("text-h6").style("margin-top: 8px;")
                 user_agent = ui.textarea("User agent", value=str(current_config["youtube"]["user_agent"])).classes("url-input")
                 user_agent.props("autogrow")
-                cookies_env = ui.input(
-                    "Cookies",
-                    value=str(current_config["youtube"].get("cookies_env") or "COOKIES_ENV"),
-                ).classes("url-input")
 
             status = ui.label("").style("color: #555; margin-top: 10px")
 
@@ -488,7 +484,6 @@ def config_page() -> None:
                         },
                         "youtube": {
                             "user_agent": (user_agent.value or "").strip(),
-                            "cookies_env": (cookies_env.value or "").strip() or "COOKIES_ENV",
                         },
                     }
                     save_config_file(new_config)
