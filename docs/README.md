@@ -32,7 +32,7 @@ youtube:
 
 The application always listens on 0.0.0.0:8000. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
 
-For local runs, Netscape-format cookies can be stored in `.env`. Use `.env.example` as the template. The real `.env` contains credentials and must not be committed.
+For local and Docker runs, Netscape-format cookies can optionally be stored in .env. Docker also starts when this file is absent. Use .env.example as the template. The real .env contains credentials and must not be committed.
 
 ## Docker Deployment
 

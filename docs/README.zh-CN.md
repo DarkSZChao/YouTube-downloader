@@ -32,7 +32,7 @@ youtube:
 
 服务器地址、内部端口、Docker 端口映射和 reload 行为不由配置页面管理。应用固定监听 `0.0.0.0:8000`。
 
-本地运行时，可以把 Netscape 格式的 cookies 保存到 `.env`。请使用 `.env.example` 作为模板。真实 `.env` 含有账号凭据，不应提交到版本库。
+本地或 Docker 运行时，可以选择把 Netscape 格式的 cookies 保存到 .env；没有该文件时 Docker 也能正常启动。请使用 .env.example 作为模板。真实 .env 含有账号凭据，不应提交到版本库。
 
 ## Docker 部署
 

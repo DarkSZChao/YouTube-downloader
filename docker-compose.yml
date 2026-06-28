@@ -5,8 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "4656:8000"
-    env_file:
-      - .env
+    environment:
+      COOKIES_ENV: ${COOKIES_ENV:-}
     volumes:
       - ./assets/downloads:/app/assets/downloads
       - ./config/config.yaml:/app/config/config.yaml
