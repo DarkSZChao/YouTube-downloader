@@ -29,9 +29,19 @@ youtube:
   user_agent: Mozilla/5.0
 ```
 
-服务器地址、内部端口、Docker 端口映射和 reload 行为不由配置页面管理。应用固定监听 `0.0.0.0:8000`。
+配置约定：
 
-本地或 Docker 运行时，可以选择把 Netscape 格式的 cookies 保存到 .env；没有该文件时 Docker 也能正常启动。请使用 .env.example 作为模板。真实 .env 含有账号凭据，不应提交到版本库。
+- 常规、非敏感的应用配置放在 `config/config.yaml`，也可以通过 `/config` 页面修改。
+- 密码、cookies 等敏感变量只放在项目根目录 `.env`，不要写入 `config/config.yaml`。
+- 使用 `.env.example` 作为可提交的模板，真实 `.env` 不得提交到版本库。
+
+```env
+ENV_COOKIES="完整的 Netscape cookies.txt 内容"
+```
+
+应用会优先读取进程环境变量，再回退读取本地 `.env`。没有 `.env` 时 Docker 也能正常启动。部署到 Render 时，应在服务的 Environment 设置中配置 `ENV_COOKIES`，不要提交 `.env` 文件。
+
+服务器地址、内部端口、Docker 端口映射和 reload 行为不由配置页面管理。应用固定监听 `0.0.0.0:8000`。
 
 ## Docker 部署
 

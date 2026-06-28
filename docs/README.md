@@ -29,9 +29,19 @@ youtube:
   user_agent: Mozilla/5.0
 ```
 
-The application always listens on 0.0.0.0:8000. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
+Configuration policy:
 
-For local and Docker runs, Netscape-format cookies can optionally be stored in .env. Docker also starts when this file is absent. Use .env.example as the template. The real .env contains credentials and must not be committed.
+- Store regular, non-sensitive application settings in `config/config.yaml`. These values can also be edited from the `/config` page.
+- Store secrets and credentials only in the project-root `.env`, never in `config/config.yaml`.
+- Use `.env.example` as the committed template. The real `.env` must not be committed.
+
+```env
+ENV_COOKIES="complete Netscape cookies.txt content"
+```
+
+The application checks the process environment first and then the local `.env`. Docker also starts when `.env` is absent. On Render, configure `ENV_COOKIES` in the service Environment settings instead of committing an `.env` file.
+
+The application always listens on `0.0.0.0:8000`. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
 
 ## Docker Deployment
 
