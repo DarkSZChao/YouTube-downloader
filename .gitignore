@@ -4,6 +4,8 @@ __pycache__/
 *.pyo
 *.pyd
 
+.git-local
+
 .venv/
 venv/
 env/
