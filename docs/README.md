@@ -4,17 +4,6 @@
 
 A NiceGUI app that downloads YouTube audio as MP3 and supports selecting tracks from playlists.
 
-## Local Run
-
-Install FFmpeg and Python dependencies, then run:
-
-```bash
-pip install -r requirements.txt
-python -m app
-```
-
-The app always listens on `http://localhost:8000` when run locally.
-
 ## Configuration
 
 Open `/config` from the application or use the Settings button. Settings are stored in `config/config.yaml`.
@@ -39,22 +28,22 @@ Configuration policy:
 ENV_COOKIES="complete Netscape cookies.txt content"
 ```
 
-The application checks the process environment first and then the local `.env`. Docker also starts when `.env` is absent. On Render, configure `ENV_COOKIES` in the service Environment settings instead of committing an `.env` file.
+The application checks the process environment first and then the local `.env`. Docker also starts when `.env` is absent.
 
 The application always listens on `0.0.0.0:8000`. Server host, internal port, Docker port mapping, and reload behavior are not managed from the application settings page.
 
-## Docker Deployment
+## VPS Docker Deployment
 
-Build and run:
+Install Docker Engine with the Compose plugin on the VPS, then run from the repository root:
 
 ```bash
 docker compose up -d --build
 ```
 
-Docker always exposes the application at http://localhost:4655 and maps it to the fixed container port:
+On the VPS, Docker publishes host port 4658 and maps it to the fixed container port:
 
 ```text
-4655:8000
+4658:8000
 ```
 
 After changing the mapping in docker-compose.yml, recreate the container:
@@ -65,8 +54,8 @@ docker compose up -d --force-recreate
 
 Downloaded temporary files are stored in `assets/downloads` and cleaned according to `config/config.yaml`.
 
-## Render and YouTube Checks
+## YouTube Checks
 
-YouTube may reject shared hosting IPs with Sign in to confirm you are not a bot. In that case, export Netscape-format browser cookies and set the fixed ENV_COOKIES environment variable.
+YouTube may reject VPS IPs with Sign in to confirm you are not a bot. In that case, export Netscape-format browser cookies and set the fixed ENV_COOKIES environment variable.
 
-The Docker image includes the BgUtils PO Token Provider. Render must deploy this repository with its `Dockerfile`; a Python native runtime will not include that provider.
+The Docker image includes FFmpeg, Node.js, and the BgUtils PO Token Provider. Use the included `Dockerfile` and `docker-compose.yml` to deploy.
