@@ -40,10 +40,10 @@ ENV_COOKIES="完整的 Netscape cookies.txt 内容"
 docker compose up -d --build
 ```
 
-Docker 在 VPS 上发布主机端口 4658，并映射到容器内部端口：
+Docker 在 VPS 上发布主机端口 4653，并映射到容器内部端口：
 
 ```text
-4658:8000
+4653:8000
 ```
 
 修改 docker-compose.yml 中的端口映射后，需要重新创建容器：

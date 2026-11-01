@@ -40,10 +40,10 @@ Install Docker Engine with the Compose plugin on the VPS, then run from the repo
 docker compose up -d --build
 ```
 
-On the VPS, Docker publishes host port 4658 and maps it to the fixed container port:
+On the VPS, Docker publishes host port 4653 and maps it to the fixed container port:
 
 ```text
-4658:8000
+4653:8000
 ```
 
 After changing the mapping in docker-compose.yml, recreate the container:
